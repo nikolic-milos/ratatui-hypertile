@@ -439,7 +439,6 @@ version = "0.1.0"
 dependencies = [
  "crossterm",
  "ratatui",
- "ratatui-hypertile-extras",
  "serde",
  "serde_json",
 ]
