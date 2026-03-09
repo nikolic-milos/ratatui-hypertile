@@ -14,8 +14,12 @@ impl HypertileState {
         self.cycle_focus(false)
     }
 
-    /// Requires a computed layout.
-    #[must_use = "this returns a Result that may contain an error"]
+    /// Moves focus to the nearest pane in the requested direction.
+    ///
+    /// Uses cached pane rectangles from [`Self::compute_layout`] to find the best match.
+    ///
+    /// Returns `Ok(true)` if focus moved, `Ok(false)` if there was nowhere to go,
+    /// and [`StateError::LayoutUnavailable`] if layout data has not been computed.
     pub fn focus_direction(
         &mut self,
         dir: Direction,
@@ -43,7 +47,9 @@ impl HypertileState {
         Ok(true)
     }
 
-    #[must_use = "this returns a Result that may contain an error"]
+    /// Focuses the pane with the given id.
+    ///
+    /// Returns [`StateError::UnknownPaneId`] if the pane is not in the tree.
     pub fn focus_pane(&mut self, pane_id: PaneId) -> Result<(), StateError> {
         let Some(path) = self.pane_path(pane_id) else {
             return Err(StateError::UnknownPaneId(pane_id));
@@ -52,8 +58,9 @@ impl HypertileState {
         Ok(())
     }
 
-    /// Returns the focused pane id. Falls back to the leftmost leaf if the
-    /// path is stale.
+    /// Returns the currently focused pane id.
+    ///
+    /// If `focused_path` is stale, falls back to the leftmost leaf under the deepest valid node.
     #[must_use]
     pub fn focused_pane(&self) -> Option<PaneId> {
         let mut current = &self.root;
@@ -68,7 +75,9 @@ impl HypertileState {
         leftmost_leaf_id(current)
     }
 
-    /// Syncs `focused_path` with the current tree.
+    /// Rebuilds `focused_path` to match the current tree.
+    ///
+    /// Safe to call even if the current focus does not resolve to a pane.
     pub fn sync_focus_path(&mut self) {
         if let Some(id) = self.focused_pane() {
             if let Some(correct_path) = self.pane_path(id) {
@@ -112,10 +121,21 @@ impl HypertileState {
         if len == 0 {
             return None;
         }
-        let idx = sorted.iter().position(|(id, _)| *id == focused).unwrap_or(0);
-        let next = if forward { (idx + 1) % len } else { (idx + len - 1) % len };
+        let idx = sorted
+            .iter()
+            .position(|(id, _)| *id == focused)
+            .unwrap_or(0);
+        let next = if forward {
+            (idx + 1) % len
+        } else {
+            (idx + len - 1) % len
+        };
         let next_id = sorted[next].0;
-        if next_id == focused { None } else { Some(next_id) }
+        if next_id == focused {
+            None
+        } else {
+            Some(next_id)
+        }
     }
 
     fn cycle_in_ids(ids: &[PaneId], focused: PaneId, forward: bool) -> Option<PaneId> {
@@ -124,11 +144,26 @@ impl HypertileState {
             return None;
         }
         let idx = ids.iter().position(|id| *id == focused).unwrap_or(0);
-        let next = if forward { (idx + 1) % len } else { (idx + len - 1) % len };
+        let next = if forward {
+            (idx + 1) % len
+        } else {
+            (idx + len - 1) % len
+        };
         let next_id = ids[next];
-        if next_id == focused { None } else { Some(next_id) }
+        if next_id == focused {
+            None
+        } else {
+            Some(next_id)
+        }
     }
 
+    /// Picks the pane to focus when moving in one direction.
+    ///
+    /// Considers every cached pane except the current one, filters to panes that
+    /// are actually in the requested direction, and picks the closest match.
+    ///
+    /// Overlap on the perpendicular axis is preferred. If nothing overlaps, the
+    /// nearest non-overlapping pane wins.
     pub(super) fn best_directional_target(
         &self,
         focused_id: PaneId,

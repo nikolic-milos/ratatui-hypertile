@@ -5,12 +5,13 @@ use ratatui::layout::Direction;
 use super::HypertileState;
 
 impl HypertileState {
-    #[must_use = "this returns a Result that may contain an error"]
     pub fn split(&mut self, direction: Direction, new_id: PaneId) -> Result<(), StateError> {
         self.split_with_ratio(direction, new_id, 0.5)
     }
 
-    #[must_use = "this returns a Result that may contain an error"]
+    /// Splits the focused pane and inserts `new_id` as the new sibling.
+    ///
+    /// Uses `ratio` for the new split and returns an error if `new_id` is already in the tree.
     pub fn split_with_ratio(
         &mut self,
         direction: Direction,
@@ -43,8 +44,9 @@ impl HypertileState {
         Ok(())
     }
 
-    /// Removes the focused pane, promoting its sibling.
-    #[must_use = "this returns a Result that may contain an error"]
+    /// Removes the focused pane and promotes its sibling.
+    ///
+    /// Returns the removed pane id.
     pub fn remove_focused(&mut self) -> Result<PaneId, StateError> {
         if self.focused_path.is_empty() {
             return Err(StateError::CannotRemoveRootPane);
@@ -81,8 +83,9 @@ impl HypertileState {
         Ok(removed_id)
     }
 
-    /// Nudges the parent split ratio by `delta`.
-    #[must_use = "this returns a Result that may contain an error"]
+    /// Adjusts the parent split ratio by `delta`.
+    ///
+    /// Returns `Ok(true)` if the ratio changed, or `Ok(false)` if there was nothing to change.
     pub fn resize_focused(&mut self, delta: f32) -> Result<bool, StateError> {
         let Some(&child_idx) = self.focused_path.last() else {
             return Ok(false);
@@ -111,7 +114,8 @@ impl HypertileState {
     }
 
     /// Sets the parent split ratio directly.
-    #[must_use = "this returns a Result that may contain an error"]
+    ///
+    /// Returns `Ok(true)` if the ratio changed, or `Ok(false)` if it was already at that value.
     pub fn set_focused_ratio(&mut self, ratio: f32) -> Result<bool, StateError> {
         if self.focused_path.is_empty() {
             return Ok(false);

@@ -12,7 +12,9 @@ use crate::core::{Node, PaneId, StateError};
 use ratatui::layout::Rect;
 use std::collections::BTreeMap;
 
-/// Raw tree state. Most code should use [`Hypertile`](crate::Hypertile).
+/// Mutable tree state.
+///
+/// Prefer using [`Hypertile`](crate::Hypertile) instead of this directly.
 #[derive(Debug, Clone)]
 pub struct HypertileState {
     root: Node,
@@ -48,7 +50,6 @@ impl HypertileState {
     }
 
     /// Replaces the tree and resets focus to the leftmost leaf.
-    #[must_use = "this returns a Result that may contain an error"]
     pub fn set_root(&mut self, root: Node) -> Result<(), StateError> {
         let normalized = normalize_tree(root);
         validate_unique_pane_ids(&normalized)?;
@@ -81,7 +82,6 @@ impl HypertileState {
         self.highlight_focus
     }
 
-    /// Recomputes pane rectangles for `area`.
     pub fn compute_layout(&mut self, area: Rect) {
         self.sync_focus_path();
 
@@ -93,10 +93,12 @@ impl HypertileState {
         compute_recursive(&self.root, area, &mut self.layout_cache, self.gap);
 
         self.sorted_panes.clear();
-        self.sorted_panes.extend(self.layout_cache.iter().map(|(id, rect)| (*id, *rect)));
-        self.sorted_panes.sort_unstable_by(|(id_a, ra), (id_b, rb)| {
-            (ra.y, ra.x, *id_a).cmp(&(rb.y, rb.x, *id_b))
-        });
+        self.sorted_panes
+            .extend(self.layout_cache.iter().map(|(id, rect)| (*id, *rect)));
+        self.sorted_panes
+            .sort_unstable_by(|(id_a, ra), (id_b, rb)| {
+                (ra.y, ra.x, *id_a).cmp(&(rb.y, rb.x, *id_b))
+            });
 
         self.last_area = Some(area);
         self.dirty = false;
@@ -108,28 +110,21 @@ impl HypertileState {
         self.sorted_panes.clear();
     }
 
-    /// Returns `None` until `compute_layout` has been called.
-    #[must_use]
     pub fn pane_rect(&self, id: PaneId) -> Option<Rect> {
         self.layout_cache.get(&id).copied()
     }
 
-    /// Pane rectangles in id order.
     pub fn panes(&self) -> impl Iterator<Item = (PaneId, Rect)> + '_ {
         self.layout_cache.iter().map(|(id, rect)| (*id, *rect))
     }
 
-    /// Panes sorted top-to-bottom, then left-to-right.
     pub fn panes_geometric_order(&self) -> &[(PaneId, Rect)] {
         &self.sorted_panes
     }
-
-    #[must_use]
     pub fn pane_path(&self, pane_id: PaneId) -> Option<Vec<usize>> {
         find_pane_path(&self.root, pane_id)
     }
 
-    /// Walks the tree in preorder.
     pub fn walk_preorder<F>(&self, mut visit: F)
     where
         F: FnMut(&[usize], &Node),
@@ -158,7 +153,6 @@ impl HypertileState {
         self.gap
     }
 
-    /// Sets the gap between panes.
     pub fn set_gap(&mut self, gap: u16) {
         if self.gap != gap {
             self.gap = gap;

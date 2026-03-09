@@ -40,7 +40,6 @@ impl HypertileBuilder {
         self
     }
 
-    /// Ignores non-finite or zero values.
     pub fn with_resize_step(mut self, step: f32) -> Self {
         if step.is_finite() && step > 0.0 {
             self.resize_step = step;
@@ -58,7 +57,6 @@ impl HypertileBuilder {
         self
     }
 
-    #[must_use]
     pub fn build(self) -> Hypertile {
         let mut state = HypertileState::new();
         state.set_focus_highlight(self.highlight_focus);
@@ -114,7 +112,6 @@ impl Hypertile {
         &mut self.state
     }
 
-    /// Recomputes pane rectangles for `area`.
     pub fn compute_layout(&mut self, area: Rect) {
         self.state.compute_layout(area);
     }
@@ -150,7 +147,6 @@ impl Hypertile {
         self.state.focused_pane()
     }
 
-    #[must_use = "this returns a Result that may contain an error"]
     pub fn focus_pane(&mut self, pane_id: PaneId) -> Result<(), StateError> {
         self.state.focus_pane(pane_id)
     }
@@ -168,18 +164,14 @@ impl Hypertile {
     pub fn root(&self) -> &Node {
         self.state.root()
     }
-
-    #[must_use = "this returns a Result that may contain an error"]
     pub fn set_root(&mut self, root: Node) -> Result<(), StateError> {
         self.state.set_root(root)
     }
 
-    /// Resets to one root pane.
     pub fn reset(&mut self) {
         self.state.reset();
     }
 
-    /// Walks the tree in preorder.
     pub fn walk_preorder<F>(&self, visit: F)
     where
         F: FnMut(&[usize], &Node),
@@ -187,13 +179,12 @@ impl Hypertile {
         self.state.walk_preorder(visit)
     }
 
-    /// Returns pane snapshots in display order.
     #[must_use]
     pub fn panes(&self) -> Vec<PaneSnapshot> {
         self.panes_iter().collect()
     }
 
-    /// Like [`panes`](Self::panes) without allocating.
+    /// Like [`panes`](Self::panes), but without allocating.
     pub fn panes_iter(&self) -> impl Iterator<Item = PaneSnapshot> + '_ {
         let focused = self.state.focused_pane();
         let highlight = self.state.focus_highlight();
@@ -208,7 +199,6 @@ impl Hypertile {
     }
 
     /// Splits the focused pane with the current [`SplitPolicy`].
-    #[must_use = "this returns a Result that may contain an error"]
     pub fn split_focused(&mut self, direction: Direction) -> Result<PaneId, StateError> {
         let pane_id = self.state.allocate_pane_id();
         self.state
@@ -216,26 +206,21 @@ impl Hypertile {
         Ok(pane_id)
     }
 
-    /// Closes the focused pane.
-    #[must_use = "this returns a Result that may contain an error"]
     pub fn close_focused(&mut self) -> Result<PaneId, StateError> {
         self.state.remove_focused()
     }
 
-    /// Sets the parent split ratio for the focused pane.
-    #[must_use = "this returns a Result that may contain an error"]
     pub fn set_focused_ratio(&mut self, ratio: f32) -> Result<(), StateError> {
         self.state.set_focused_ratio(ratio).map(|_| ())
     }
 
-    /// Like [`try_apply_action`](Self::try_apply_action), but returns `Ignored` on error.
+    /// Like [`try_apply_action`](Self::try_apply_action), but returns
+    /// [`EventOutcome::Ignored`] on error.
     pub fn apply_action(&mut self, action: HypertileAction) -> EventOutcome {
         self.try_apply_action(action)
             .unwrap_or(EventOutcome::Ignored)
     }
 
-    /// Applies one action.
-    #[must_use = "this returns a Result that may contain an error"]
     pub fn try_apply_action(
         &mut self,
         action: HypertileAction,
@@ -271,8 +256,6 @@ impl Hypertile {
             EventOutcome::Ignored
         })
     }
-
-    #[must_use = "this returns a Result that may contain an error"]
     pub fn try_handle_event(&mut self, event: HypertileEvent) -> Result<EventOutcome, StateError> {
         match event {
             HypertileEvent::Action(action) => self.try_apply_action(action),
@@ -280,7 +263,8 @@ impl Hypertile {
         }
     }
 
-    /// Like [`try_handle_event`](Self::try_handle_event), but returns `Ignored` on error.
+    /// Like [`try_handle_event`](Self::try_handle_event), but returns
+    /// [`EventOutcome::Ignored`] on error.
     pub fn handle_event(&mut self, event: HypertileEvent) -> EventOutcome {
         self.try_handle_event(event)
             .unwrap_or(EventOutcome::Ignored)

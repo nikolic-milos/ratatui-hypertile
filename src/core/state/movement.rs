@@ -6,8 +6,10 @@ use ratatui::layout::Direction;
 use super::HypertileState;
 
 impl HypertileState {
-    /// Swaps the focused pane with its sibling in the nearest ancestor split on `move_dir`.
-    #[must_use = "this returns a Result that may contain an error"]
+    /// Swaps the focused pane with its sibling in the nearest split on `move_dir`.
+    ///
+    /// Returns `Ok(true)` if a swap happened, `Ok(false)` if there was no
+    /// matching split, and [`StateError::ParentNodeNotSplit`] if the parent node is not a split.
     pub fn move_pane_split(
         &mut self,
         move_dir: Direction,
@@ -53,8 +55,10 @@ impl HypertileState {
         Ok(false)
     }
 
-    /// Swaps the focused pane with the nearest pane in `move_dir`. Requires a computed layout.
-    #[must_use = "this returns a Result that may contain an error"]
+    /// Swaps the focused pane with the nearest pane in the requested direction.
+    ///
+    /// Returns `Ok(true)` if a swap happened, `Ok(false)` if there was nowhere
+    /// to move, and [`StateError::LayoutUnavailable`] if layout data is missing.
     pub fn move_pane_window(
         &mut self,
         move_dir: Direction,
@@ -84,7 +88,6 @@ impl HypertileState {
             return Err(StateError::UnknownPaneId(target_id));
         };
 
-        // Swap pane ids only. The tree shape stays the same.
         let focused_node = node_mut_at_path(&mut self.root, &focused_path)?;
         let Node::Pane(focused_leaf_id) = focused_node else {
             return Err(StateError::FocusedNodeNotPane);
