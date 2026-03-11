@@ -1,3 +1,8 @@
+//! Extras runtime demo with four plugin types: monitor, logs, editor, help.
+//!
+//! Uses [`HypertileRuntime`] for modal input, plugin palette, and tick-driven
+//! updates.
+
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::{
     buffer::Buffer,

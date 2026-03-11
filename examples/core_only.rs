@@ -1,3 +1,8 @@
+//! Core-only tiling demo without the extras runtime.
+//!
+//! Keys: `s`/`v` split, `d` close, `r` reset, `hjkl`/arrows focus,
+//! `HJKL` move, `[]` resize, `Tab` cycle, `q` quit.
+
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::{
     buffer::Buffer,
