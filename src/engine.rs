@@ -40,6 +40,8 @@ impl HypertileBuilder {
         self
     }
 
+    /// Sets the ratio delta used by resize commands.
+    /// Non-finite or non-positive values are ignored.
     pub fn with_resize_step(mut self, step: f32) -> Self {
         if step.is_finite() && step > 0.0 {
             self.resize_step = step;
@@ -116,6 +118,8 @@ impl Hypertile {
         self.state.compute_layout(area);
     }
 
+    /// Sets the ratio delta used by resize commands.
+    /// Non-finite or non-positive values are ignored.
     pub fn set_resize_step(&mut self, step: f32) {
         if step.is_finite() && step > 0.0 {
             self.resize_step = step;
@@ -256,6 +260,8 @@ impl Hypertile {
             EventOutcome::Ignored
         })
     }
+    /// Handles one event at the core-engine level.
+    /// Only [`HypertileEvent::Action`] is interpreted here; key and tick events are ignored.
     pub fn try_handle_event(&mut self, event: HypertileEvent) -> Result<EventOutcome, StateError> {
         match event {
             HypertileEvent::Action(action) => self.try_apply_action(action),

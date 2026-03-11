@@ -11,7 +11,6 @@ use ratatui::{
 };
 use ratatui_hypertile::PaneId;
 
-/// One pane bar entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PaneBarItem {
     pub pane_id: PaneId,
@@ -19,7 +18,6 @@ pub struct PaneBarItem {
     pub is_focused: bool,
 }
 
-/// Simple pane list widget.
 #[derive(Debug, Clone)]
 pub struct PaneBar {
     title: String,

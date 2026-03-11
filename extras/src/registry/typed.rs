@@ -57,12 +57,14 @@ impl<P: HypertilePlugin> TypedRegistry<P> {
         })
     }
 
+    /// Calls `on_unmount` and removes the plugin for `pane_id`.
     pub fn remove(&mut self, pane_id: PaneId) -> Option<P> {
         let mut instance = self.instances.remove(&pane_id)?;
         instance.on_unmount(PluginContext { pane_id });
         Some(instance)
     }
 
+    /// Unmounts and removes every mounted plugin.
     pub fn clear(&mut self) {
         let pane_ids: Vec<PaneId> = self.instances.keys().copied().collect();
         for pane_id in pane_ids {
@@ -72,6 +74,7 @@ impl<P: HypertilePlugin> TypedRegistry<P> {
         }
     }
 
+    /// Unmounts any plugin whose pane id is not in `keep`.
     pub fn retain_only(&mut self, keep: &HashSet<PaneId>) {
         let to_remove: Vec<PaneId> = self
             .instances
@@ -86,6 +89,8 @@ impl<P: HypertilePlugin> TypedRegistry<P> {
         }
     }
 
+    /// Forwards `event` to every mounted plugin.
+    /// Returns [`EventOutcome::Consumed`] if any plugin consumes it.
     pub fn broadcast_event(&mut self, event: &HypertileEvent) -> EventOutcome {
         let mut consumed = false;
         for instance in self.instances.values_mut() {

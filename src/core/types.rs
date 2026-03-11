@@ -30,7 +30,6 @@ impl std::fmt::Display for PaneId {
     }
 }
 
-/// Tree node.
 #[derive(Debug, Clone)]
 pub enum Node {
     Pane(PaneId),
@@ -42,7 +41,7 @@ pub enum Node {
     },
 }
 
-/// State errors.
+/// Returned when a raw tree mutation or focus operation cannot be applied.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StateError {
     InvalidPath,

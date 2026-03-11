@@ -59,6 +59,8 @@ impl HypertileRuntimeBuilder {
         self
     }
 
+    /// Sets the ratio delta used by resize commands.
+    /// Non-finite or non-positive values are ignored.
     pub fn with_resize_step(mut self, step: f32) -> Self {
         self.core_builder = self.core_builder.with_resize_step(step);
         self
@@ -69,17 +71,22 @@ impl HypertileRuntimeBuilder {
         self
     }
 
+    /// Sets palette size as percentages of the terminal area.
+    /// Values are clamped to `10..=100`.
     pub fn with_palette_size(mut self, width_percent: u16, height_percent: u16) -> Self {
         self.palette_width_percent = width_percent.clamp(10, 100);
         self.palette_height_percent = height_percent.clamp(10, 100);
         self
     }
 
+    /// Sets the maximum number of visible palette items.
+    /// Values smaller than `1` are treated as `1`.
     pub fn with_palette_max_items(mut self, max_items: usize) -> Self {
         self.palette_max_items = max_items.max(1);
         self
     }
 
+    /// Sets how move commands resolve by default.
     pub fn with_default_move_scope(mut self, scope: MoveScope) -> Self {
         self.default_move_scope = scope;
         self

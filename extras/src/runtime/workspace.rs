@@ -8,14 +8,13 @@ struct Tab {
     runtime: HypertileRuntime,
 }
 
-/// A set of [`HypertileRuntime`] tabs.
+/// Tabbed container that owns one [`HypertileRuntime`] per tab.
 pub struct WorkspaceRuntime {
     tabs: Vec<Tab>,
     active: usize,
     builder_factory: Box<dyn Fn() -> HypertileRuntimeBuilder>,
 }
 
-/// Workspace tab actions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkspaceAction {
     NewTab,

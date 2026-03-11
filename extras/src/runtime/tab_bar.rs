@@ -8,14 +8,12 @@ use ratatui::{
 
 use super::workspace::WorkspaceRuntime;
 
-/// One tab bar entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TabBarItem {
     pub label: String,
     pub is_active: bool,
 }
 
-/// Simple tab list widget.
 #[derive(Debug, Clone)]
 pub struct TabBar {
     pub items: Vec<TabBarItem>,

@@ -4,7 +4,7 @@ use ratatui::symbols::border;
 use ratatui::widgets::Borders;
 use ratatui_hypertile::StateError;
 
-/// Border styles.
+/// Border styling for panes and the focused-pane highlight.
 #[derive(Debug, Clone)]
 pub struct BorderConfig {
     pub borders: Borders,
@@ -26,11 +26,14 @@ impl Default for BorderConfig {
     }
 }
 
-/// What happens after a split shortcut.
+/// Chooses which plugin appears after a split shortcut.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SplitBehavior {
+    /// Mount the configured default split plugin type.
     DefaultPlugin,
+    /// Mount the built-in placeholder plugin.
     Placeholder,
+    /// Open the plugin palette so the user can choose a plugin.
     PromptPalette,
 }
 
@@ -41,7 +44,7 @@ pub enum InputMode {
     PluginInput,
 }
 
-/// Runtime errors.
+/// Wraps layout-state and registry errors produced by [`super::HypertileRuntime`].
 #[derive(Debug, Clone)]
 pub enum RuntimeError {
     State(StateError),

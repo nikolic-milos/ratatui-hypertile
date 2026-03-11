@@ -183,6 +183,7 @@ impl HypertileRuntime {
         Ok(removed_id)
     }
 
+    /// Unmounts the focused pane's current plugin and mounts a new `plugin_type`.
     pub fn replace_focused_plugin(&mut self, plugin_type: &str) -> Result<(), RuntimeError> {
         let Some(pane_id) = self.core.focused_pane() else {
             return Err(RuntimeError::NoFocusedPane);
@@ -195,6 +196,7 @@ impl HypertileRuntime {
         Ok(())
     }
 
+    /// Focuses `pane_id`, then replaces its plugin with a new `plugin_type` instance.
     pub fn replace_pane_plugin(
         &mut self,
         pane_id: PaneId,
@@ -214,7 +216,7 @@ impl HypertileRuntime {
         Ok(())
     }
 
-    /// Handles one event.
+    /// Handles one event and returns any runtime error directly.
     pub fn try_handle_event(
         &mut self,
         event: HypertileEvent,

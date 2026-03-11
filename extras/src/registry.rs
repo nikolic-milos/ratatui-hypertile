@@ -8,10 +8,12 @@ use ratatui::{buffer::Buffer, layout::Rect};
 use ratatui_hypertile::{EventOutcome, HypertileEvent, PaneId};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-/// Pane plugin trait.
+/// Trait implemented by pane-local plugins stored in [`Registry`].
 pub trait HypertilePlugin {
     fn render(&self, area: Rect, buf: &mut Buffer, is_focused: bool);
 
+    /// Handles an event forwarded by the runtime or registry.
+    /// Return [`EventOutcome::Consumed`] to mark it handled.
     fn on_event(&mut self, _event: &HypertileEvent) -> EventOutcome {
         EventOutcome::Ignored
     }
@@ -20,11 +22,13 @@ pub trait HypertilePlugin {
 
     fn on_unmount(&mut self, _ctx: PluginContext) {}
 
+    /// Returns serializable state to include in persisted plugin snapshots.
     #[cfg(feature = "serde")]
     fn save_state(&self) -> Option<serde_json::Value> {
         None
     }
 
+    /// Restores state previously returned by [`save_state`](Self::save_state).
     #[cfg(feature = "serde")]
     fn load_state(&mut self, _state: &serde_json::Value) -> Result<(), String> {
         Ok(())
@@ -36,7 +40,7 @@ struct PluginInstance {
     plugin: Box<dyn HypertilePlugin>,
 }
 
-/// Plugin factories and live instances.
+/// Stores plugin factories and mounted plugin instances keyed by pane id.
 #[derive(Default)]
 pub struct Registry {
     factories: BTreeMap<String, Box<dyn Fn() -> Box<dyn HypertilePlugin>>>,
@@ -44,6 +48,8 @@ pub struct Registry {
 }
 
 impl Registry {
+    /// Registers a factory for `plugin_type`.
+    /// Registering the same name again replaces the previous factory.
     pub fn register_plugin_type<F, P>(&mut self, plugin_type: &str, factory: F)
     where
         F: Fn() -> P + 'static,
@@ -55,11 +61,12 @@ impl Registry {
         );
     }
 
+    /// Returns registered plugin type names in sorted order.
     pub fn registered_types(&self) -> impl Iterator<Item = &str> {
         self.factories.keys().map(String::as_str)
     }
 
-    /// Creates and mounts a plugin for `pane_id`.
+    /// Creates a fresh plugin, calls `on_mount`, and stores it for `pane_id`.
     pub fn spawn_plugin(
         &mut self,
         plugin_type: &str,
@@ -80,7 +87,7 @@ impl Registry {
         Ok(())
     }
 
-    /// Creates a plugin without mounting it.
+    /// Creates a plugin without mounting or storing it.
     pub fn instantiate_plugin(
         &self,
         plugin_type: &str,
@@ -92,6 +99,8 @@ impl Registry {
         Ok(factory())
     }
 
+    /// Calls `on_mount` and stores an existing plugin instance for `pane_id`.
+    /// If `pane_id` already has a plugin, the old instance is replaced.
     pub fn mount_plugin_instance(
         &mut self,
         pane_id: PaneId,
@@ -108,6 +117,7 @@ impl Registry {
         );
     }
 
+    /// Calls `on_unmount` and removes the plugin for `pane_id`.
     pub fn remove_plugin(&mut self, pane_id: PaneId) -> Result<(), RegistryError> {
         let Some(mut instance) = self.instances.remove(&pane_id) else {
             return Err(RegistryError::MissingPane(pane_id));
@@ -121,6 +131,7 @@ impl Registry {
         self.remove_plugin(pane_id).is_ok()
     }
 
+    /// Unmounts and removes every mounted plugin.
     pub fn clear(&mut self) {
         let pane_ids = self.instances.keys().copied().collect::<Vec<_>>();
         for pane_id in pane_ids {
@@ -128,6 +139,7 @@ impl Registry {
         }
     }
 
+    /// Unmounts any plugin whose pane id is not in `keep`.
     pub fn retain_only(&mut self, keep: &HashSet<PaneId>) {
         let to_remove: Vec<PaneId> = self
             .instances
@@ -163,6 +175,8 @@ impl Registry {
         self.instances.len()
     }
 
+    /// Forwards `event` to every mounted plugin.
+    /// Returns [`EventOutcome::Consumed`] if any plugin consumes it.
     pub fn broadcast_event(&mut self, event: &HypertileEvent) -> EventOutcome {
         let mut consumed = false;
         for instance in self.instances.values_mut() {

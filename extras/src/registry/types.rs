@@ -6,7 +6,7 @@ pub struct PluginContext {
     pub pane_id: PaneId,
 }
 
-/// Registry errors.
+/// Returned when a plugin type is unknown or a pane's plugin mount state is invalid.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RegistryError {
     UnknownPluginType(String),

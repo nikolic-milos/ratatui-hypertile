@@ -1,7 +1,7 @@
 use ratatui::layout::Direction;
 use std::ops::{BitOr, BitOrAssign};
 
-/// Input event.
+/// Event delivered to the layout engine or runtime.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HypertileEvent {
     Key(KeyChord),
@@ -113,7 +113,7 @@ pub enum MoveScope {
     Split,
 }
 
-/// Layout action.
+/// Command understood by [`crate::Hypertile`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HypertileAction {
     FocusNext,
@@ -139,7 +139,7 @@ pub enum HypertileAction {
     },
 }
 
-/// Result of handling an event.
+/// Whether an event handler consumed an event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventOutcome {
     Ignored,
