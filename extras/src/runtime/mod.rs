@@ -15,8 +15,7 @@ use crate::registry::{HypertilePlugin, Registry};
 use ratatui::layout::{Direction, Rect};
 use ratatui_hypertile::{
     EventOutcome, Hypertile as CoreHypertile, HypertileEvent, KeyChord, KeyCode, PaneId,
-    PaneSnapshot, raw,
-    raw::Node as CoreNode,
+    PaneSnapshot, raw, raw::Node as CoreNode,
 };
 use std::collections::HashSet;
 
@@ -309,7 +308,9 @@ impl HypertileRuntime {
     }
 
     fn sync_registry_to_core(&mut self) {
-        let keep: HashSet<PaneId> = raw::collect_pane_ids(self.core.root()).into_iter().collect();
+        let keep: HashSet<PaneId> = raw::collect_pane_ids(self.core.root())
+            .into_iter()
+            .collect();
         self.registry.retain_only(&keep);
 
         for &pane_id in &keep {

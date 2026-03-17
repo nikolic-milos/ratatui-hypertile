@@ -110,11 +110,7 @@ fn render_tabs(workspace: &WorkspaceRuntime, area: Rect, buf: &mut Buffer) {
         .tab_labels()
         .enumerate()
         .flat_map(|(i, (label, active))| {
-            let sep = if i > 0 {
-                vec![Span::raw(" ")]
-            } else {
-                vec![]
-            };
+            let sep = if i > 0 { vec![Span::raw(" ")] } else { vec![] };
             let tab = if active {
                 Span::styled(
                     format!(" {label} "),
@@ -289,7 +285,10 @@ impl HypertilePlugin for NetworkPlugin {
 
         let stat = |label: &str, value: String, color: Color| {
             Line::from(vec![
-                Span::styled(format!("  {label:<16}"), Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!("  {label:<16}"),
+                    Style::default().fg(Color::DarkGray),
+                ),
                 Span::styled(value, Style::default().fg(color)),
             ])
         };
@@ -300,9 +299,21 @@ impl HypertilePlugin for NetworkPlugin {
             stat("requests/s", format!("{rps}"), Color::Green),
             Line::from(""),
             stat("latency p50", format!("{p50}ms"), Color::Cyan),
-            stat("latency p99", format!("{p99}ms"), if p99 > 100 { Color::Yellow } else { Color::Cyan }),
+            stat(
+                "latency p99",
+                format!("{p99}ms"),
+                if p99 > 100 {
+                    Color::Yellow
+                } else {
+                    Color::Cyan
+                },
+            ),
             Line::from(""),
-            stat("errors/min", format!("{errs}"), if errs > 8 { Color::Red } else { Color::Green }),
+            stat(
+                "errors/min",
+                format!("{errs}"),
+                if errs > 8 { Color::Red } else { Color::Green },
+            ),
             stat("uptime", format!("{up_h}h {up_m}m"), Color::DarkGray),
         ];
         Paragraph::new(text)

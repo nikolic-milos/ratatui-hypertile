@@ -1,8 +1,8 @@
 use ratatui::prelude::*;
 use ratatui::style::Color;
 
-use super::types::InputMode;
 use super::HypertileRuntime;
+use super::types::InputMode;
 
 /// [`StatefulWidget`] wrapper for [`HypertileRuntime`](super::HypertileRuntime).
 pub struct HypertileView;

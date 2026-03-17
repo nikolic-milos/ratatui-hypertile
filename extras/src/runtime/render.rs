@@ -86,17 +86,14 @@ impl HypertileRuntime {
 
         let items = visible
             .iter()
-            .map(|name| {
-                ListItem::new(format!("  {name}  "))
-            })
+            .map(|name| ListItem::new(format!("  {name}  ")))
             .collect::<Vec<_>>();
-        let list = List::new(items)
-            .highlight_style(
-                Style::default()
-                    .fg(Color::Rgb(30, 30, 46))
-                    .bg(Color::Rgb(137, 180, 250))
-                    .bold(),
-            );
+        let list = List::new(items).highlight_style(
+            Style::default()
+                .fg(Color::Rgb(30, 30, 46))
+                .bg(Color::Rgb(137, 180, 250))
+                .bold(),
+        );
         let mut state = ListState::default();
         state.select(Some(selected));
         StatefulWidget::render(list, inner, buf, &mut state);
