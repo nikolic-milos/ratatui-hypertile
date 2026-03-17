@@ -194,7 +194,11 @@ fn set_root_resets_focus_and_rejects_duplicates() {
     assert_eq!(err, StateError::DuplicatePaneId(PaneId::new(1)));
 
     assert_eq!(state.focused_pane(), Some(PaneId::new(10)));
-    assert_eq!(state.pane_ids(), vec![PaneId::new(10), PaneId::new(20)]);
+    state.compute_layout(area(100, 50));
+    assert_eq!(
+        state.pane_ids().collect::<Vec<_>>(),
+        vec![PaneId::new(10), PaneId::new(20)]
+    );
 }
 
 #[test]

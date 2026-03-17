@@ -15,7 +15,8 @@ use crate::registry::{HypertilePlugin, Registry};
 use ratatui::layout::{Direction, Rect};
 use ratatui_hypertile::{
     EventOutcome, Hypertile as CoreHypertile, HypertileEvent, KeyChord, KeyCode, PaneId,
-    PaneSnapshot, raw::Node as CoreNode,
+    PaneSnapshot, raw,
+    raw::Node as CoreNode,
 };
 use std::collections::HashSet;
 
@@ -23,10 +24,9 @@ pub use builder::HypertileRuntimeBuilder;
 #[cfg(feature = "crossterm")]
 pub use crossterm::{event_from_crossterm, keychord_from_crossterm};
 pub use keymap::MoveBindings;
-pub use render::{PaneBar, PaneBarItem};
 pub use tab_bar::{TabBar, TabBarItem};
 pub use types::{BorderConfig, InputMode, RuntimeError, SplitBehavior};
-pub use widget::HypertileView;
+pub use widget::{HypertileView, ModeIndicator};
 pub use workspace::{WorkspaceAction, WorkspaceRuntime};
 
 use constants::DEFAULT_PLUGIN_TYPE;
@@ -35,9 +35,9 @@ use palette::PaletteState;
 
 /// Core engine, plugins, modal input, and palette.
 ///
-/// Uses vim-style keys and Escape to switch modes. Use the core
-/// [`Hypertile`](ratatui_hypertile::Hypertile) directly if you want
-/// custom input handling.
+/// `i` enters plugin input mode, `ESC` returns to layout mode.
+/// Use the core [`Hypertile`](ratatui_hypertile::Hypertile) directly
+/// if you want custom input handling.
 ///
 /// ```
 /// use ratatui_hypertile_extras::HypertileRuntime;
@@ -227,11 +227,11 @@ impl HypertileRuntime {
             HypertileEvent::Tick => Ok(self.registry.broadcast_event(&HypertileEvent::Tick)),
             HypertileEvent::Key(chord) => {
                 if chord.code == KeyCode::Escape && chord.modifiers.is_empty() {
-                    self.mode = match self.mode {
-                        InputMode::Layout => InputMode::PluginInput,
-                        InputMode::PluginInput => InputMode::Layout,
-                    };
-                    return Ok(EventOutcome::Consumed);
+                    if self.mode == InputMode::PluginInput {
+                        self.mode = InputMode::Layout;
+                        return Ok(EventOutcome::Consumed);
+                    }
+                    return Ok(EventOutcome::Ignored);
                 }
 
                 match self.mode {
@@ -256,6 +256,10 @@ impl HypertileRuntime {
             Some(RuntimeAction::SplitDefault(direction)) => self.handle_split_shortcut(direction),
             Some(RuntimeAction::OpenPalette) => self.open_palette(),
             Some(RuntimeAction::InteractFocused) => self.handle_interact_focused(),
+            Some(RuntimeAction::EnterPluginInput) => {
+                self.mode = InputMode::PluginInput;
+                Ok(EventOutcome::Consumed)
+            }
             None => Ok(EventOutcome::Ignored),
         }
     }
@@ -305,11 +309,10 @@ impl HypertileRuntime {
     }
 
     fn sync_registry_to_core(&mut self) {
-        let pane_ids = self.core.state().pane_ids();
-        let keep: HashSet<PaneId> = pane_ids.iter().copied().collect();
+        let keep: HashSet<PaneId> = raw::collect_pane_ids(self.core.root()).into_iter().collect();
         self.registry.retain_only(&keep);
 
-        for pane_id in pane_ids {
+        for &pane_id in &keep {
             if self.registry.plugin(pane_id).is_none() {
                 let _ = self.registry.spawn_plugin(DEFAULT_PLUGIN_TYPE, pane_id);
             }

@@ -1,7 +1,5 @@
-mod typed;
 mod types;
 
-pub use typed::TypedRegistry;
 pub use types::{PluginContext, RegistryError};
 
 use ratatui::{buffer::Buffer, layout::Rect};

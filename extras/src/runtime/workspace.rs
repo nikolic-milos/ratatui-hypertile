@@ -1,7 +1,7 @@
 use ratatui::prelude::*;
-use ratatui_hypertile::{EventOutcome, HypertileEvent};
+use ratatui_hypertile::{EventOutcome, HypertileEvent, KeyCode, Modifiers};
 
-use super::{HypertileRuntime, HypertileRuntimeBuilder};
+use super::HypertileRuntime;
 
 struct Tab {
     label: String,
@@ -9,10 +9,13 @@ struct Tab {
 }
 
 /// Tabbed container that owns one [`HypertileRuntime`] per tab.
+///
+/// `Ctrl+t` new tab, `Ctrl+w` close tab,
+/// `Ctrl+n`/`Ctrl+p` or `Ctrl+Right`/`Ctrl+Left` to switch tabs.
 pub struct WorkspaceRuntime {
     tabs: Vec<Tab>,
     active: usize,
-    builder_factory: Box<dyn Fn() -> HypertileRuntimeBuilder>,
+    factory: Box<dyn Fn() -> HypertileRuntime>,
 }
 
 /// Command understood by [`WorkspaceRuntime`].
@@ -27,16 +30,16 @@ pub enum WorkspaceAction {
 }
 
 impl WorkspaceRuntime {
-    /// Creates a workspace. The factory is used for each new tab.
-    pub fn new(builder_factory: impl Fn() -> HypertileRuntimeBuilder + 'static) -> Self {
-        let first = builder_factory().build();
+    /// Creates a workspace. The factory builds a fully configured runtime for each new tab.
+    pub fn new(factory: impl Fn() -> HypertileRuntime + 'static) -> Self {
+        let first = factory();
         Self {
             tabs: vec![Tab {
                 label: "1".to_string(),
                 runtime: first,
             }],
             active: 0,
-            builder_factory: Box::new(builder_factory),
+            factory: Box::new(factory),
         }
     }
 
@@ -56,18 +59,17 @@ impl WorkspaceRuntime {
         self.active
     }
 
-    pub fn tab_labels(&self) -> Vec<(&str, bool)> {
+    pub fn tab_labels(&self) -> impl Iterator<Item = (&str, bool)> {
         self.tabs
             .iter()
             .enumerate()
-            .map(|(i, tab)| (tab.label.as_str(), i == self.active))
-            .collect()
+            .map(move |(i, tab)| (tab.label.as_str(), i == self.active))
     }
 
     /// Adds a new tab and switches to it.
     pub fn new_tab(&mut self) {
         let label = (self.tabs.len() + 1).to_string();
-        let runtime = (self.builder_factory)().build();
+        let runtime = (self.factory)();
         self.tabs.push(Tab { label, runtime });
         self.active = self.tabs.len() - 1;
     }
@@ -120,7 +122,31 @@ impl WorkspaceRuntime {
         }
     }
 
+    /// Intercepts `Ctrl+t/w/Left/Right` for tab control, forwards the rest.
     pub fn handle_event(&mut self, event: HypertileEvent) -> EventOutcome {
+        if let HypertileEvent::Key(chord) = &event
+            && chord.modifiers == Modifiers::CTRL
+        {
+            match chord.code {
+                KeyCode::Char('t') => {
+                    self.new_tab();
+                    return EventOutcome::Consumed;
+                }
+                KeyCode::Char('w') => {
+                    self.close_tab(self.active);
+                    return EventOutcome::Consumed;
+                }
+                KeyCode::Char('n') | KeyCode::Right => {
+                    self.next_tab();
+                    return EventOutcome::Consumed;
+                }
+                KeyCode::Char('p') | KeyCode::Left => {
+                    self.prev_tab();
+                    return EventOutcome::Consumed;
+                }
+                _ => {}
+            }
+        }
         self.tabs[self.active].runtime.handle_event(event)
     }
 
@@ -134,7 +160,7 @@ mod tests {
     use super::*;
 
     fn test_workspace() -> WorkspaceRuntime {
-        WorkspaceRuntime::new(HypertileRuntimeBuilder::default)
+        WorkspaceRuntime::new(HypertileRuntime::new)
     }
 
     #[test]

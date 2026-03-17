@@ -1,95 +1,13 @@
-use std::fmt::Write;
-
 use crate::runtime::HypertileRuntime;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
     style::{Color, Style},
-    widgets::{
-        Block, Borders, Clear, List, ListItem, ListState, Paragraph, StatefulWidget, Widget,
-    },
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, StatefulWidget, Widget},
 };
 use ratatui_hypertile::PaneId;
 
-/// One entry in a [`PaneBar`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PaneBarItem {
-    pub pane_id: PaneId,
-    pub plugin_type: String,
-    pub is_focused: bool,
-}
-
-/// Widget that lists all panes with their plugin types.
-#[derive(Debug, Clone)]
-pub struct PaneBar {
-    title: String,
-    items: Vec<PaneBarItem>,
-}
-
-impl PaneBar {
-    pub fn new(items: Vec<PaneBarItem>) -> Self {
-        Self {
-            title: "Pane Bar".to_string(),
-            items,
-        }
-    }
-
-    pub fn from_runtime(runtime: &HypertileRuntime) -> Self {
-        Self::new(runtime.pane_bar_items())
-    }
-
-    pub fn with_title(mut self, title: impl Into<String>) -> Self {
-        self.title = title.into();
-        self
-    }
-}
-
-impl Widget for PaneBar {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        let text = if self.items.is_empty() {
-            "no panes".to_string()
-        } else {
-            let mut text = String::new();
-            for (i, item) in self.items.iter().enumerate() {
-                if i > 0 {
-                    text.push_str(" | ");
-                }
-                let marker = if item.is_focused { '*' } else { ' ' };
-                let _ = write!(
-                    text,
-                    "{}{}:{}",
-                    marker,
-                    item.pane_id.get(),
-                    item.plugin_type
-                );
-            }
-            text
-        };
-
-        Paragraph::new(text)
-            .block(Block::default().borders(Borders::ALL).title(self.title))
-            .render(area, buf);
-    }
-}
-
 impl HypertileRuntime {
-    pub fn pane_bar_items(&self) -> Vec<PaneBarItem> {
-        let focused = self.core.focused_pane();
-        let highlight = self.core.state().focus_highlight();
-        self.core
-            .panes_iter()
-            .map(|pane| PaneBarItem {
-                pane_id: pane.id,
-                plugin_type: self
-                    .registry
-                    .plugin_type_for(pane.id)
-                    .unwrap_or("unknown")
-                    .to_string(),
-                is_focused: highlight && Some(pane.id) == focused,
-            })
-            .collect()
-    }
-
     /// Renders panes and the palette overlay if it is open.
     pub fn render(&mut self, area: Rect, buf: &mut Buffer) {
         self.core.compute_layout(area);
@@ -111,8 +29,7 @@ impl HypertileRuntime {
         }
     }
 
-    /// Fallback renderer for panes without a plugin.
-    pub fn render_fallback_pane(
+    pub(crate) fn render_fallback_pane(
         &self,
         pane_id: PaneId,
         area: Rect,
@@ -155,21 +72,31 @@ impl HypertileRuntime {
         let visible = &filtered[start..end];
         let selected = self.palette.selected.saturating_sub(start);
 
-        let block = Block::default().borders(Borders::ALL).title(format!(
-            "Add Plugin ({}/{}) q='{}'",
-            self.palette.selected + 1,
-            filtered.len(),
-            self.palette.query
-        ));
+        let title = if self.palette.query.is_empty() {
+            " Plugins ".to_string()
+        } else {
+            format!(" {} ", self.palette.query)
+        };
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Rgb(137, 180, 250)))
+            .title(title);
         let inner = block.inner(popup);
         block.render(popup, buf);
 
         let items = visible
             .iter()
-            .map(|name| ListItem::new(name.as_str()))
+            .map(|name| {
+                ListItem::new(format!("  {name}  "))
+            })
             .collect::<Vec<_>>();
-        let list =
-            List::new(items).highlight_style(Style::default().fg(Color::Black).bg(Color::White));
+        let list = List::new(items)
+            .highlight_style(
+                Style::default()
+                    .fg(Color::Rgb(30, 30, 46))
+                    .bg(Color::Rgb(137, 180, 250))
+                    .bold(),
+            );
         let mut state = ListState::default();
         state.select(Some(selected));
         StatefulWidget::render(list, inner, buf, &mut state);

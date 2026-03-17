@@ -1,8 +1,3 @@
-//! Extras runtime demo with four plugin types: monitor, logs, editor, help.
-//!
-//! Uses [`HypertileRuntime`] for modal input, plugin palette, and tick-driven
-//! updates.
-
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::{
     buffer::Buffer,
@@ -14,13 +9,133 @@ use ratatui::{
 };
 use ratatui_hypertile::{EventOutcome, HypertileEvent, KeyCode as HtKeyCode, PaneId};
 use ratatui_hypertile_extras::{
-    HypertilePlugin, HypertileRuntime, InputMode, SplitBehavior, event_from_crossterm,
+    HypertilePlugin, HypertileRuntime, ModeIndicator, SplitBehavior, WorkspaceRuntime,
+    event_from_crossterm,
 };
 use std::{
     collections::VecDeque,
     io,
     time::{Duration, Instant},
 };
+
+fn build_runtime() -> HypertileRuntime {
+    let mut rt = HypertileRuntime::builder()
+        .with_split_behavior(SplitBehavior::Placeholder)
+        .build();
+    rt.register_plugin_type("monitor", || MonitorPlugin {
+        cpu: [15, 42, 8, 63],
+        mem: 34,
+        tick: 0,
+    });
+    rt.register_plugin_type("logs", || LogsPlugin {
+        lines: VecDeque::new(),
+        tick: 0,
+    });
+    rt.register_plugin_type("editor", || EditorPlugin {
+        text: String::new(),
+    });
+    rt.register_plugin_type("network", || NetworkPlugin { tick: 0 });
+    rt
+}
+
+fn main() -> io::Result<()> {
+    let mut terminal = ratatui::init();
+
+    let mut workspace = WorkspaceRuntime::new(build_runtime);
+
+    let rt = workspace.active_runtime_mut();
+    let _ = rt.replace_focused_plugin("monitor");
+    let _ = rt.split_focused(Direction::Vertical, "logs");
+    let _ = rt.focus_pane(PaneId::ROOT);
+    let _ = rt.split_focused(Direction::Horizontal, "network");
+
+    let result = run(&mut terminal, &mut workspace);
+    ratatui::restore();
+    result
+}
+
+fn run(
+    terminal: &mut ratatui::DefaultTerminal,
+    workspace: &mut WorkspaceRuntime,
+) -> io::Result<()> {
+    let tick_rate = Duration::from_millis(300);
+    let mut last_tick = Instant::now();
+
+    loop {
+        terminal.draw(|frame| {
+            let [tabs, gap_top, body, gap_bot, footer] = Layout::vertical([
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Min(0),
+                Constraint::Length(1),
+                Constraint::Length(1),
+            ])
+            .areas(frame.area());
+
+            render_tabs(workspace, tabs, frame.buffer_mut());
+            let _ = gap_top;
+            workspace.render(body, frame.buffer_mut());
+            let _ = gap_bot;
+
+            let rt = workspace.active_runtime();
+            let [mode_area, hint_area] =
+                Layout::horizontal([Constraint::Length(10), Constraint::Min(0)]).areas(footer);
+            ModeIndicator::new(rt.mode()).render(mode_area, frame.buffer_mut());
+            Paragraph::new("  Ctrl+t/w: tab | s/v: split | d: close | p: palette | i: input")
+                .style(Style::default().fg(Color::DarkGray))
+                .render(hint_area, frame.buffer_mut());
+        })?;
+
+        let timeout = tick_rate.saturating_sub(last_tick.elapsed());
+        if event::poll(timeout)?
+            && let Event::Key(key) = event::read()?
+        {
+            if key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL {
+                return Ok(());
+            }
+            if let Some(ev) = event_from_crossterm(key) {
+                workspace.handle_event(ev);
+            }
+        }
+
+        if last_tick.elapsed() >= tick_rate {
+            workspace.handle_event(HypertileEvent::Tick);
+            last_tick = Instant::now();
+        }
+    }
+}
+
+fn render_tabs(workspace: &WorkspaceRuntime, area: Rect, buf: &mut Buffer) {
+    let spans: Vec<Span> = workspace
+        .tab_labels()
+        .enumerate()
+        .flat_map(|(i, (label, active))| {
+            let sep = if i > 0 {
+                vec![Span::raw(" ")]
+            } else {
+                vec![]
+            };
+            let tab = if active {
+                Span::styled(
+                    format!(" {label} "),
+                    Style::default()
+                        .fg(Color::Rgb(30, 30, 46))
+                        .bg(Color::Rgb(137, 180, 250))
+                        .bold(),
+                )
+            } else {
+                Span::styled(
+                    format!(" {label} "),
+                    Style::default()
+                        .fg(Color::Rgb(205, 214, 244))
+                        .bg(Color::Rgb(69, 71, 90)),
+                )
+            };
+            sep.into_iter().chain(std::iter::once(tab))
+        })
+        .collect();
+    Line::from(spans).render(area, buf);
+}
 
 struct MonitorPlugin {
     cpu: [u8; 4],
@@ -157,99 +272,50 @@ impl HypertilePlugin for EditorPlugin {
     }
 }
 
-struct HelpPlugin;
+struct NetworkPlugin {
+    tick: u64,
+}
 
-impl HypertilePlugin for HelpPlugin {
+impl HypertilePlugin for NetworkPlugin {
     fn render(&self, area: Rect, buf: &mut Buffer, is_focused: bool) {
+        let t = self.tick;
+        let conns = 800 + (t * 17 % 120) as u32;
+        let rps = 1100 + (t * 31 % 400) as u32;
+        let p50 = 8 + (t * 3 % 15) as u32;
+        let p99 = 60 + (t * 7 % 80) as u32;
+        let errs = (t * 11 % 12) as u32;
+        let up_h = t / 12;
+        let up_m = (t * 5) % 60;
+
+        let stat = |label: &str, value: String, color: Color| {
+            Line::from(vec![
+                Span::styled(format!("  {label:<16}"), Style::default().fg(Color::DarkGray)),
+                Span::styled(value, Style::default().fg(color)),
+            ])
+        };
+
         let text = vec![
             Line::from(""),
-            Line::from("  s/v     split"),
-            Line::from("  d       close pane"),
-            Line::from("  p       open palette"),
-            Line::from("  Enter   interact with pane"),
-            Line::from("  Esc     toggle layout/input mode"),
-            Line::from("  hjkl    focus direction"),
-            Line::from("  HJKL    move pane"),
-            Line::from("  [ ]     resize"),
-            Line::from("  Tab     cycle focus"),
-            Line::from("  q       quit"),
+            stat("connections", format!("{conns}"), Color::Green),
+            stat("requests/s", format!("{rps}"), Color::Green),
+            Line::from(""),
+            stat("latency p50", format!("{p50}ms"), Color::Cyan),
+            stat("latency p99", format!("{p99}ms"), if p99 > 100 { Color::Yellow } else { Color::Cyan }),
+            Line::from(""),
+            stat("errors/min", format!("{errs}"), if errs > 8 { Color::Red } else { Color::Green }),
+            stat("uptime", format!("{up_h}h {up_m}m"), Color::DarkGray),
         ];
         Paragraph::new(text)
-            .block(pane_block("Help", is_focused, Color::Cyan))
+            .block(pane_block("Network", is_focused, Color::Blue))
             .render(area, buf);
     }
-}
 
-fn main() -> io::Result<()> {
-    let mut terminal = ratatui::init();
-
-    let mut runtime = HypertileRuntime::builder()
-        .with_split_behavior(SplitBehavior::Placeholder)
-        .build();
-    runtime.register_plugin_type("monitor", || MonitorPlugin {
-        cpu: [15, 42, 8, 63],
-        mem: 34,
-        tick: 0,
-    });
-    runtime.register_plugin_type("logs", || LogsPlugin {
-        lines: VecDeque::new(),
-        tick: 0,
-    });
-    runtime.register_plugin_type("editor", || EditorPlugin {
-        text: String::new(),
-    });
-    runtime.register_plugin_type("help", || HelpPlugin);
-
-    let _ = runtime.replace_focused_plugin("monitor");
-    let _ = runtime.split_focused(Direction::Vertical, "logs");
-    let _ = runtime.focus_pane(PaneId::ROOT);
-    let _ = runtime.split_focused(Direction::Horizontal, "editor");
-
-    let result = run(&mut terminal, &mut runtime);
-    ratatui::restore();
-    result
-}
-
-fn run(terminal: &mut ratatui::DefaultTerminal, runtime: &mut HypertileRuntime) -> io::Result<()> {
-    let tick_rate = Duration::from_millis(300);
-    let mut last_tick = Instant::now();
-
-    loop {
-        terminal.draw(|frame| {
-            let [header, body] =
-                Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).areas(frame.area());
-
-            let mode = match runtime.mode() {
-                InputMode::Layout => "layout",
-                InputMode::PluginInput => "input",
-            };
-            Paragraph::new(format!(
-                "mode: {mode} | s/v: split | d: close | p: palette | Esc: toggle mode | q: quit"
-            ))
-            .block(Block::default().borders(Borders::ALL).title("basic"))
-            .render(header, frame.buffer_mut());
-
-            runtime.render(body, frame.buffer_mut());
-        })?;
-
-        let timeout = tick_rate.saturating_sub(last_tick.elapsed());
-        if event::poll(timeout)?
-            && let Event::Key(key) = event::read()?
-        {
-            match (key.code, key.modifiers) {
-                (KeyCode::Char('q'), KeyModifiers::NONE)
-                | (KeyCode::Char('c'), KeyModifiers::CONTROL) => return Ok(()),
-                _ => {
-                    if let Some(ev) = event_from_crossterm(key) {
-                        runtime.handle_event(ev);
-                    }
-                }
-            }
-        }
-
-        if last_tick.elapsed() >= tick_rate {
-            runtime.handle_event(HypertileEvent::Tick);
-            last_tick = Instant::now();
+    fn on_event(&mut self, event: &HypertileEvent) -> EventOutcome {
+        if matches!(event, HypertileEvent::Tick) {
+            self.tick += 1;
+            EventOutcome::Consumed
+        } else {
+            EventOutcome::Ignored
         }
     }
 }

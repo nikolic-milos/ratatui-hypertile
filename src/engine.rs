@@ -114,7 +114,7 @@ impl Hypertile {
         &mut self.state
     }
 
-    /// Skips work if the area and tree have not changed since the last call.
+    /// Skips if the area and tree are unchanged.
     pub fn compute_layout(&mut self, area: Rect) {
         self.state.compute_layout(area);
     }
@@ -161,6 +161,7 @@ impl Hypertile {
         self.state.pane_rect(pane_id)
     }
 
+    /// `0` means first child, `1` means second.
     #[must_use]
     pub fn pane_path(&self, pane_id: PaneId) -> Option<Vec<usize>> {
         self.state.pane_path(pane_id)
@@ -213,10 +214,12 @@ impl Hypertile {
         Ok(pane_id)
     }
 
+    /// Sibling gets promoted into the parent's slot.
     pub fn close_focused(&mut self) -> Result<PaneId, StateError> {
         self.state.remove_focused()
     }
 
+    /// Sets the ratio on the parent split, not the pane.
     pub fn set_focused_ratio(&mut self, ratio: f32) -> Result<(), StateError> {
         self.state.set_focused_ratio(ratio).map(|_| ())
     }

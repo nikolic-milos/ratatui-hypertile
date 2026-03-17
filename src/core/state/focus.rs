@@ -1,4 +1,6 @@
-use crate::core::helpers::{leftmost_leaf_id, ranges_overlap, rect_center};
+use crate::core::helpers::{
+    collect_pane_ids as collect_pane_ids_impl, leftmost_leaf_id, ranges_overlap, rect_center,
+};
 use crate::core::{Node, PaneId, StateError};
 use crate::input::Towards;
 use ratatui::layout::{Direction, Rect};
@@ -6,10 +8,12 @@ use ratatui::layout::{Direction, Rect};
 use super::HypertileState;
 
 impl HypertileState {
+    /// Wraps around, top left to bottom right.
     pub fn focus_next(&mut self) -> bool {
         self.cycle_focus(true)
     }
 
+    /// Same as [`focus_next`](Self::focus_next) but backwards.
     pub fn focus_prev(&mut self) -> bool {
         self.cycle_focus(false)
     }
@@ -95,7 +99,7 @@ impl HypertileState {
         let next_id = if !self.sorted_panes.is_empty() {
             Self::cycle_in_sorted(&self.sorted_panes, focused_id, forward)
         } else {
-            let ids = self.pane_ids();
+            let ids = collect_pane_ids_impl(&self.root);
             Self::cycle_in_ids(&ids, focused_id, forward)
         };
 

@@ -70,8 +70,9 @@ impl HypertileState {
         &self.root
     }
 
-    pub fn pane_ids(&self) -> Vec<PaneId> {
-        collect_pane_ids_impl(&self.root)
+    /// Empty until you call [`compute_layout`](Self::compute_layout).
+    pub fn pane_ids(&self) -> impl Iterator<Item = PaneId> + '_ {
+        self.layout_cache.keys().copied()
     }
 
     pub fn set_focus_highlight(&mut self, enabled: bool) {
@@ -82,13 +83,13 @@ impl HypertileState {
         self.highlight_focus
     }
 
-    /// Skips work if the area and tree have not changed since the last call.
+    /// Skips if the area and tree are unchanged.
     pub fn compute_layout(&mut self, area: Rect) {
-        self.sync_focus_path();
-
         if !self.dirty && self.last_area == Some(area) {
             return;
         }
+
+        self.sync_focus_path();
 
         self.layout_cache.clear();
         compute_recursive(&self.root, area, &mut self.layout_cache, self.gap);
@@ -119,10 +120,12 @@ impl HypertileState {
         self.layout_cache.iter().map(|(id, rect)| (*id, *rect))
     }
 
+    /// Sorted top to bottom, left to right.
     pub fn panes_geometric_order(&self) -> &[(PaneId, Rect)] {
         &self.sorted_panes
     }
 
+    /// `0` means first child, `1` means second.
     pub fn pane_path(&self, pane_id: PaneId) -> Option<Vec<usize>> {
         find_pane_path(&self.root, pane_id)
     }
@@ -168,6 +171,7 @@ impl HypertileState {
     }
 }
 
+/// Doesn't need layout, walks the tree directly.
 pub fn collect_pane_ids(node: &Node) -> Vec<PaneId> {
     collect_pane_ids_impl(node)
 }

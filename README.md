@@ -6,17 +6,29 @@
 
 Hyprland-inspired BSP tiling engine for Ratatui.
 
-Cook up delicious TUIs with layouts you can split, move, resize, tweak at
-runtime, and persist.
+Cook up delicious TUIs with layouts you can split, move, resize, and tweak at
+runtime.
 
-## Crates
+---
 
-- **ratatui-hypertile** - core engine with full control
-- **[ratatui-hypertile-extras](https://crates.io/crates/ratatui-hypertile-extras)** - runtime helpers with plugins, palette, keymaps, and tabs
+<h3>ratatui-hypertile</h3>
 
-## Core vs Extras
+The core engine. You give it an area, it gives you rectangles. Handles the
+tree, layout math, focus tracking, and pane movement. Use this if you want
+full control over input and rendering.
 
-Most apps will probably want
-[`ratatui-hypertile-extras`](https://crates.io/crates/ratatui-hypertile-extras).
-It is the more batteries-included version, with plugins, command palette,
-keymaps, and tabs.
+<h3>ratatui-hypertile-extras</h3>
+
+Wraps the core into a runtime with batteries. Register plugins, feed it
+events, call render. Ships with vim-style keymaps, a command palette for
+swapping plugins on the fly, and workspace tabs. Write a plugin by
+implementing `render` on `HypertilePlugin` and you're set.
+
+---
+
+<h3>Try it yourself</h3>
+
+```sh
+cargo run --example basic
+cargo run --example core_only
+```

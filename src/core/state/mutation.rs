@@ -5,6 +5,7 @@ use ratatui::layout::Direction;
 use super::HypertileState;
 
 impl HypertileState {
+    /// [`split_with_ratio`](Self::split_with_ratio) with a 50/50 split.
     pub fn split(&mut self, direction: Direction, new_id: PaneId) -> Result<(), StateError> {
         self.split_with_ratio(direction, new_id, 0.5)
     }

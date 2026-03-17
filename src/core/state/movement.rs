@@ -81,9 +81,7 @@ impl HypertileState {
             return Ok(false);
         }
 
-        let Some(focused_path) = self.pane_path(focused_id) else {
-            return Err(StateError::UnknownPaneId(focused_id));
-        };
+        let focused_path = self.focused_path.clone();
         let Some(target_path) = self.pane_path(target_id) else {
             return Err(StateError::UnknownPaneId(target_id));
         };

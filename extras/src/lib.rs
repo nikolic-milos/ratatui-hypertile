@@ -14,10 +14,10 @@
 mod registry;
 mod runtime;
 
-pub use registry::{HypertilePlugin, PluginContext, Registry, RegistryError, TypedRegistry};
+pub use registry::{HypertilePlugin, PluginContext, Registry, RegistryError};
 pub use runtime::{
     BorderConfig, HypertileRuntime, HypertileRuntimeBuilder, HypertileView, InputMode,
-    MoveBindings, PaneBar, PaneBarItem, RuntimeError, SplitBehavior, TabBar, TabBarItem,
+    ModeIndicator, MoveBindings, RuntimeError, SplitBehavior, TabBar, TabBarItem,
     WorkspaceAction, WorkspaceRuntime,
 };
 
