@@ -25,4 +25,3 @@ serde = ["dep:serde"]
 
 [dev-dependencies]
 crossterm = "0.29"
-serde_json = "1.0"
