@@ -1,19 +1,29 @@
 use crate::core::{Node, PaneId, StateError};
 use ratatui::layout::Rect;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 
 pub(super) const MIN_SPLIT_RATIO: f32 = 0.1;
 pub(super) const MAX_SPLIT_RATIO: f32 = 0.9;
 
 pub(super) fn validate_unique_pane_ids(node: &Node) -> Result<(), StateError> {
-    let ids = collect_pane_ids(node);
-    let mut seen = HashSet::with_capacity(ids.len());
-    for id in ids {
-        if !seen.insert(id) {
-            return Err(StateError::DuplicatePaneId(id));
+    fn walk(node: &Node, seen: &mut HashSet<PaneId>) -> Result<(), StateError> {
+        match node {
+            Node::Pane(id) => {
+                if !seen.insert(*id) {
+                    return Err(StateError::DuplicatePaneId(*id));
+                }
+            }
+            Node::Split { first, second, .. } => {
+                walk(first, seen)?;
+                walk(second, seen)?;
+            }
         }
+
+        Ok(())
     }
-    Ok(())
+
+    let mut seen = HashSet::new();
+    walk(node, &mut seen)
 }
 
 pub(super) fn normalize_ratio(ratio: f32) -> f32 {
@@ -64,7 +74,7 @@ pub(super) fn shrink_rect(rect: Rect, gap: u16) -> Rect {
 pub(super) fn compute_recursive(
     node: &Node,
     area: Rect,
-    cache: &mut BTreeMap<PaneId, Rect>,
+    cache: &mut Vec<(PaneId, Rect)>,
     gap: u16,
 ) {
     match node {
@@ -74,7 +84,7 @@ pub(super) fn compute_recursive(
             } else {
                 area
             };
-            cache.insert(*id, rect);
+            cache.push((*id, rect));
         }
         Node::Split {
             direction,
@@ -143,36 +153,6 @@ pub(super) fn collect_pane_ids(node: &Node) -> Vec<PaneId> {
     }
     walk(node, &mut ids);
     ids
-}
-
-pub(super) fn find_pane_path(node: &Node, target_id: PaneId) -> Option<Vec<usize>> {
-    fn walk(node: &Node, target_id: PaneId, path: &mut Vec<usize>) -> bool {
-        match node {
-            Node::Pane(id) => *id == target_id,
-            Node::Split { first, second, .. } => {
-                path.push(0);
-                if walk(first, target_id, path) {
-                    return true;
-                }
-                path.pop();
-
-                path.push(1);
-                if walk(second, target_id, path) {
-                    return true;
-                }
-                path.pop();
-
-                false
-            }
-        }
-    }
-
-    let mut path = Vec::new();
-    if walk(node, target_id, &mut path) {
-        Some(path)
-    } else {
-        None
-    }
 }
 
 pub(super) fn leftmost_leaf_id(node: &Node) -> Option<PaneId> {

@@ -1,9 +1,8 @@
-use crate::core::helpers::{
-    collect_pane_ids as collect_pane_ids_impl, leftmost_leaf_id, ranges_overlap, rect_center,
-};
+use crate::core::helpers::{leftmost_leaf_id, ranges_overlap, rect_center};
 use crate::core::{Node, PaneId, StateError};
 use crate::input::Towards;
 use ratatui::layout::{Direction, Rect};
+use std::collections::HashMap;
 
 use super::HypertileState;
 
@@ -32,7 +31,7 @@ impl HypertileState {
         let Some(focused_id) = self.focused_pane() else {
             return Ok(false);
         };
-        let Some(focused_rect) = self.layout_cache.get(&focused_id).copied() else {
+        let Some(focused_rect) = self.pane_rect(focused_id) else {
             return Err(StateError::LayoutUnavailable);
         };
 
@@ -40,25 +39,21 @@ impl HypertileState {
         else {
             return Ok(false);
         };
-        let Some(path) = self.pane_path(target_id) else {
-            return Ok(false);
-        };
-        if path == self.focused_path {
+        if self.pane_path_cached(target_id).is_none() {
             return Ok(false);
         }
 
-        self.focused_path = path;
-        Ok(true)
+        Ok(self.focus_path_for(target_id))
     }
 
     /// Focuses the pane with the given id.
     ///
     /// Returns [`StateError::UnknownPaneId`] if the pane is not in the tree.
     pub fn focus_pane(&mut self, pane_id: PaneId) -> Result<(), StateError> {
-        let Some(path) = self.pane_path(pane_id) else {
+        if self.pane_path_cached(pane_id).is_none() {
             return Err(StateError::UnknownPaneId(pane_id));
-        };
-        self.focused_path = path;
+        }
+        let _ = self.focus_path_for(pane_id);
         Ok(())
     }
 
@@ -84,10 +79,9 @@ impl HypertileState {
     /// Safe to call even if the current focus does not resolve to a pane.
     pub fn sync_focus_path(&mut self) {
         if let Some(id) = self.focused_pane()
-            && let Some(correct_path) = self.pane_path(id)
-            && correct_path != self.focused_path
+            && self.focus_path_for(id)
         {
-            self.focused_path = correct_path;
+            // `focus_path_for` already refreshed the path.
         }
     }
 
@@ -97,26 +91,35 @@ impl HypertileState {
         };
 
         let next_id = if !self.sorted_panes.is_empty() {
-            Self::cycle_in_sorted(&self.sorted_panes, focused_id, forward)
+            if self.sorted_pane_index.len() != self.sorted_panes.len() {
+                self.sorted_pane_index.clear();
+                self.sorted_pane_index.extend(
+                    self.sorted_panes
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, (id, _))| (*id, idx)),
+                );
+            }
+            Self::cycle_in_sorted(
+                &self.sorted_panes,
+                &self.sorted_pane_index,
+                focused_id,
+                forward,
+            )
         } else {
-            let ids = collect_pane_ids_impl(&self.root);
-            Self::cycle_in_ids(&ids, focused_id, forward)
+            Self::cycle_in_ids(&self.pane_ids_preorder, focused_id, forward)
         };
 
         let Some(next_id) = next_id else {
             return false;
         };
 
-        if let Some(path) = self.pane_path(next_id) {
-            self.focused_path = path;
-            return true;
-        }
-
-        false
+        self.focus_path_for(next_id)
     }
 
     fn cycle_in_sorted(
         sorted: &[(PaneId, Rect)],
+        positions: &HashMap<PaneId, usize>,
         focused: PaneId,
         forward: bool,
     ) -> Option<PaneId> {
@@ -124,10 +127,7 @@ impl HypertileState {
         if len == 0 {
             return None;
         }
-        let idx = sorted
-            .iter()
-            .position(|(id, _)| *id == focused)
-            .unwrap_or(0);
+        let idx = positions.get(&focused).copied().unwrap_or(0);
         let next = if forward {
             (idx + 1) % len
         } else {
@@ -219,7 +219,7 @@ impl HypertileState {
         let mut best_overlap: Option<DirectionalCandidate> = None;
         let mut best_any: Option<DirectionalCandidate> = None;
 
-        for (id, rect) in self.layout_cache.iter().map(|(id, rect)| (*id, *rect)) {
+        for &(id, rect) in &self.layout_cache {
             if id == focused_id {
                 continue;
             }

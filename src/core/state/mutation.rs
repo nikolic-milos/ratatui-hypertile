@@ -1,4 +1,4 @@
-use crate::core::helpers::{find_pane_path, node_at_path, node_mut_at_path, normalize_ratio};
+use crate::core::helpers::{node_at_path, node_mut_at_path, normalize_ratio};
 use crate::core::{Node, PaneId, StateError};
 use ratatui::layout::Direction;
 
@@ -19,7 +19,7 @@ impl HypertileState {
         new_id: PaneId,
         ratio: f32,
     ) -> Result<(), StateError> {
-        if find_pane_path(&self.root, new_id).is_some() {
+        if self.pane_path_cached(new_id).is_some() {
             return Err(StateError::DuplicatePaneId(new_id));
         }
         let focused = node_mut_at_path(&mut self.root, &self.focused_path)?;
@@ -41,6 +41,7 @@ impl HypertileState {
         };
 
         self.focused_path.push(1);
+        self.rebuild_pane_index();
         self.invalidate_layout_cache();
         Ok(())
     }
@@ -80,6 +81,7 @@ impl HypertileState {
             self.focused_path.push(0);
         }
 
+        self.rebuild_pane_index();
         self.invalidate_layout_cache();
         Ok(removed_id)
     }

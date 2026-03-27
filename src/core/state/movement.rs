@@ -48,6 +48,7 @@ impl HypertileState {
 
             std::mem::swap(first, second);
             self.focused_path[target_i] = 1 - self.focused_path[target_i];
+            self.rebuild_pane_index();
             self.invalidate_layout_cache();
             return Ok(true);
         }
@@ -67,7 +68,7 @@ impl HypertileState {
         let Some(focused_id) = self.focused_pane() else {
             return Ok(false);
         };
-        let Some(focused_rect) = self.layout_cache.get(&focused_id).copied() else {
+        let Some(focused_rect) = self.pane_rect(focused_id) else {
             return Err(StateError::LayoutUnavailable);
         };
 
@@ -100,6 +101,7 @@ impl HypertileState {
         *target_leaf_id = original_focused_id;
 
         self.focused_path = target_path;
+        self.rebuild_pane_index();
         self.invalidate_layout_cache();
         Ok(true)
     }
