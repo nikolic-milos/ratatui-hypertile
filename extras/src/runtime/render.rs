@@ -6,48 +6,37 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, ListState, StatefulWidget, Widget},
 };
 use ratatui_hypertile::PaneId;
+use std::time::Instant;
 
 impl HypertileRuntime {
     /// Renders panes and the palette overlay if it is open.
+    ///
+    /// Call [`next_frame_in`](super::HypertileRuntime::next_frame_in) after drawing if
+    /// you want move animations to keep updating.
     pub fn render(&mut self, area: Rect, buf: &mut Buffer) {
+        let now = Instant::now();
+        self.animation_state.remember_area(area);
         self.core.compute_layout(area);
         let focused = self.core.focused_pane();
         let highlight = self.core.state().focus_highlight();
-        let state = self.core.state();
+        let registry = &self.registry;
+        let border_config = &self.border_config;
+        let panes = self
+            .animation_state
+            .display_rects(area, self.core.state().panes(), now);
 
-        for (pane_id, rect) in state.panes() {
+        for &(pane_id, rect) in panes {
             let is_focused = highlight && Some(pane_id) == focused;
-            if let Some(plugin) = self.registry.plugin(pane_id) {
+            if let Some(plugin) = registry.plugin(pane_id) {
                 plugin.render(rect, buf, is_focused);
             } else {
-                self.render_fallback_pane(pane_id, rect, buf, is_focused);
+                render_fallback_pane(border_config, pane_id, rect, buf, is_focused);
             }
         }
 
         if self.palette.show {
             self.render_palette(area, buf);
         }
-    }
-
-    pub(crate) fn render_fallback_pane(
-        &self,
-        pane_id: PaneId,
-        area: Rect,
-        buf: &mut Buffer,
-        is_focused: bool,
-    ) {
-        let cfg = &self.border_config;
-        let mut block = Block::default()
-            .borders(cfg.borders)
-            .border_set(cfg.border_set)
-            .border_style(cfg.border_style)
-            .title(format!("Pane {}", pane_id.get()));
-        if is_focused {
-            block = block
-                .border_set(cfg.focused_border_set)
-                .border_style(cfg.focused_border_style);
-        }
-        block.render(area, buf);
     }
 
     pub(super) fn render_palette(&mut self, area: Rect, buf: &mut Buffer) {
@@ -98,6 +87,26 @@ impl HypertileRuntime {
         state.select(Some(selected));
         StatefulWidget::render(list, inner, buf, &mut state);
     }
+}
+
+fn render_fallback_pane(
+    cfg: &crate::runtime::BorderConfig,
+    pane_id: PaneId,
+    area: Rect,
+    buf: &mut Buffer,
+    is_focused: bool,
+) {
+    let mut block = Block::default()
+        .borders(cfg.borders)
+        .border_set(cfg.border_set)
+        .border_style(cfg.border_style)
+        .title(format!("Pane {}", pane_id.get()));
+    if is_focused {
+        block = block
+            .border_set(cfg.focused_border_set)
+            .border_style(cfg.focused_border_style);
+    }
+    block.render(area, buf);
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {

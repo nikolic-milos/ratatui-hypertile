@@ -1,5 +1,6 @@
 use ratatui::prelude::*;
 use ratatui_hypertile::{EventOutcome, HypertileEvent, KeyCode, Modifiers};
+use std::time::Duration;
 
 use super::HypertileRuntime;
 
@@ -8,10 +9,11 @@ struct Tab {
     runtime: HypertileRuntime,
 }
 
-/// Tabbed container that owns one [`HypertileRuntime`] per tab.
+/// Small tab manager around [`HypertileRuntime`].
 ///
-/// `Ctrl+t` new tab, `Ctrl+w` close tab,
-/// `Ctrl+n`/`Ctrl+p` or `Ctrl+Right`/`Ctrl+Left` to switch tabs.
+/// Use this when one runtime is not enough and you want a lightweight
+/// workspace model without building it yourself. It intercepts a few `Ctrl+...`
+/// keys for tab management and forwards everything else to the active tab.
 pub struct WorkspaceRuntime {
     tabs: Vec<Tab>,
     active: usize,
@@ -21,16 +23,25 @@ pub struct WorkspaceRuntime {
 /// Command understood by [`WorkspaceRuntime`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkspaceAction {
+    /// Add a tab and switch to it.
     NewTab,
+    /// Remove one tab by index.
     CloseTab(usize),
+    /// Move to the next tab, wrapping at the end.
     NextTab,
+    /// Move to the previous tab, wrapping at the start.
     PrevTab,
+    /// Focus a specific tab by index.
     GoToTab(usize),
+    /// Replace one tab label.
     RenameTab(usize, String),
 }
 
 impl WorkspaceRuntime {
-    /// Creates a workspace. The factory builds a fully configured runtime for each new tab.
+    /// Creates a workspace from a runtime factory.
+    ///
+    /// The factory is reused for every new tab, so it should return a fully
+    /// configured runtime with your plugin registrations already in place.
     pub fn new(factory: impl Fn() -> HypertileRuntime + 'static) -> Self {
         let first = factory();
         Self {
@@ -49,6 +60,11 @@ impl WorkspaceRuntime {
 
     pub fn active_runtime_mut(&mut self) -> &mut HypertileRuntime {
         &mut self.tabs[self.active].runtime
+    }
+
+    /// Mirrors [`HypertileRuntime::next_frame_in`] for the active tab.
+    pub fn next_frame_in(&self) -> Option<Duration> {
+        self.tabs[self.active].runtime.next_frame_in()
     }
 
     pub fn tab_count(&self) -> usize {
@@ -122,7 +138,11 @@ impl WorkspaceRuntime {
         }
     }
 
-    /// Intercepts `Ctrl+t/w/Left/Right` for tab control, forwards the rest.
+    /// Handles one event for the active tab.
+    ///
+    /// `Ctrl+t`, `Ctrl+w`, `Ctrl+n`, `Ctrl+p`, `Ctrl+Left`, and `Ctrl+Right`
+    /// are reserved for tab management. Everything else goes to the active
+    /// runtime.
     pub fn handle_event(&mut self, event: HypertileEvent) -> EventOutcome {
         if let HypertileEvent::Key(chord) = &event
             && chord.modifiers == Modifiers::CTRL

@@ -23,6 +23,7 @@ pub struct ModeIndicator {
 }
 
 impl ModeIndicator {
+    /// Builds a small badge for the current input mode.
     pub fn new(mode: InputMode) -> Self {
         Self { mode }
     }

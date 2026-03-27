@@ -5,10 +5,19 @@ use crate::runtime::constants::{
 };
 use crate::runtime::default_plugin::DefaultBlockPlugin;
 use crate::runtime::palette::PaletteState;
-use crate::runtime::{BorderConfig, HypertileRuntime, InputMode, MoveBindings, SplitBehavior};
+use crate::runtime::{
+    AnimationConfig, BorderConfig, HypertileRuntime, InputMode, MoveBindings, SplitBehavior,
+};
 use ratatui_hypertile::{HypertileBuilder as CoreBuilder, MoveScope, PaneId, SplitPolicy};
 
 /// Builder for [`HypertileRuntime`](super::HypertileRuntime).
+///
+/// Start here when the defaults are close but not quite right. Most knobs map
+/// to one of three things:
+///
+/// - core layout behavior such as gap, split policy, and resize step
+/// - runtime UX such as the palette, split shortcuts, and move bindings
+/// - fallback visuals and pane motion
 ///
 /// ```
 /// use ratatui_hypertile_extras::{HypertileRuntimeBuilder, MoveBindings, SplitBehavior};
@@ -29,6 +38,7 @@ pub struct HypertileRuntimeBuilder {
     pub(super) move_bindings: MoveBindings,
     pub(super) split_behavior: SplitBehavior,
     pub(super) border_config: BorderConfig,
+    pub(super) animation_config: AnimationConfig,
 }
 
 impl Default for HypertileRuntimeBuilder {
@@ -43,6 +53,7 @@ impl Default for HypertileRuntimeBuilder {
             move_bindings: MoveBindings::VimAndShiftArrows,
             split_behavior: SplitBehavior::Placeholder,
             border_config: BorderConfig::default(),
+            animation_config: AnimationConfig::default(),
         }
     }
 }
@@ -53,7 +64,8 @@ impl HypertileRuntimeBuilder {
         self
     }
 
-    /// Plugin type used for splits when the palette is not used.
+    /// Chooses which plugin new panes get when a split shortcut should not ask
+    /// the user first.
     pub fn with_default_split_plugin(mut self, plugin_type: &str) -> Self {
         self.default_split_plugin_type = plugin_type.to_string();
         self
@@ -66,12 +78,16 @@ impl HypertileRuntimeBuilder {
         self
     }
 
+    /// Chooses how automatic split placement should behave.
+    ///
+    /// This only matters for actions that let the core decide the direction.
     pub fn with_split_policy(mut self, policy: SplitPolicy) -> Self {
         self.core_builder = self.core_builder.with_split_policy(policy);
         self
     }
 
-    /// Sets palette size as percentages of the terminal area.
+    /// Sets how much of the terminal the palette overlay should use.
+    ///
     /// Values are clamped to `10..=100`.
     pub fn with_palette_size(mut self, width_percent: u16, height_percent: u16) -> Self {
         self.palette_width_percent = width_percent.clamp(10, 100);
@@ -79,42 +95,50 @@ impl HypertileRuntimeBuilder {
         self
     }
 
-    /// Sets the maximum number of visible palette items.
-    /// Values smaller than `1` are treated as `1`.
+    /// Limits how many palette rows are visible before scrolling.
     pub fn with_palette_max_items(mut self, max_items: usize) -> Self {
         self.palette_max_items = max_items.max(1);
         self
     }
 
-    /// Sets how move commands resolve by default.
+    /// Chooses whether move commands swap panes or move the focused subtree.
     pub fn with_default_move_scope(mut self, scope: MoveScope) -> Self {
         self.default_move_scope = scope;
         self
     }
 
+    /// Chooses which layout-mode keys move panes around.
     pub fn with_move_bindings(mut self, move_bindings: MoveBindings) -> Self {
         self.move_bindings = move_bindings;
         self
     }
 
-    /// Sets what happens after a split shortcut.
+    /// Chooses whether split shortcuts open a placeholder, the default plugin,
+    /// or the palette.
     pub fn with_split_behavior(mut self, behavior: SplitBehavior) -> Self {
         self.split_behavior = behavior;
         self
     }
 
-    /// Sets pane border styles.
+    /// Sets the border look used by panes that do not draw themselves.
     pub fn with_border_config(mut self, config: BorderConfig) -> Self {
         self.border_config = config;
         self
     }
 
+    /// Turns pane motion on and sets how responsive it should feel.
+    pub fn with_animation_config(mut self, config: AnimationConfig) -> Self {
+        self.animation_config = config;
+        self
+    }
+
+    /// Adds space between pane borders.
     pub fn with_gap(mut self, gap: u16) -> Self {
         self.core_builder = self.core_builder.with_gap(gap);
         self
     }
 
-    /// Builds the runtime with a placeholder plugin in the root pane.
+    /// Builds a runtime with one root pane and the built-in placeholder plugin.
     pub fn build(self) -> HypertileRuntime {
         let core = self.core_builder.build();
 
@@ -138,6 +162,8 @@ impl HypertileRuntimeBuilder {
             move_bindings: self.move_bindings,
             split_behavior: self.split_behavior,
             border_config: self.border_config,
+            animation_config: self.animation_config,
+            animation_state: Default::default(),
         }
     }
 }

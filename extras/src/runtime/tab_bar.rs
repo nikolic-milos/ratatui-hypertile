@@ -22,6 +22,7 @@ pub struct TabBar {
 }
 
 impl TabBar {
+    /// Builds tab items from the current workspace state.
     pub fn from_workspace(workspace: &WorkspaceRuntime) -> Self {
         Self {
             items: workspace

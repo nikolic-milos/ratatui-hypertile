@@ -1,3 +1,9 @@
+//! Extras runtime demo.
+//!
+//! Keys: `hjkl`/arrows focus, `HJKL` or `Shift+Arrows` move panes,
+//! `s`/`v` split, `d` close, `[`/`]` resize, `p` palette, `i` input,
+//! `Ctrl+t/w` tabs, `Ctrl+c` quit.
+
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::{
     buffer::Buffer,
@@ -9,8 +15,8 @@ use ratatui::{
 };
 use ratatui_hypertile::{EventOutcome, HypertileEvent, KeyCode as HtKeyCode, PaneId};
 use ratatui_hypertile_extras::{
-    HypertilePlugin, HypertileRuntime, ModeIndicator, SplitBehavior, WorkspaceRuntime,
-    event_from_crossterm,
+    AnimationConfig, HypertilePlugin, HypertileRuntime, ModeIndicator, SplitBehavior,
+    WorkspaceRuntime, event_from_crossterm,
 };
 use std::{
     collections::VecDeque,
@@ -21,6 +27,10 @@ use std::{
 fn build_runtime() -> HypertileRuntime {
     let mut rt = HypertileRuntime::builder()
         .with_split_behavior(SplitBehavior::Placeholder)
+        .with_animation_config(AnimationConfig {
+            enabled: true,
+            ..AnimationConfig::default()
+        })
         .build();
     rt.register_plugin_type("monitor", || MonitorPlugin {
         cpu: [15, 42, 8, 63],
@@ -86,7 +96,10 @@ fn run(
                 .render(hint_area, frame.buffer_mut());
         })?;
 
-        let timeout = tick_rate.saturating_sub(last_tick.elapsed());
+        let timeout = workspace.next_frame_in().map_or_else(
+            || tick_rate.saturating_sub(last_tick.elapsed()),
+            |frame| frame.min(tick_rate.saturating_sub(last_tick.elapsed())),
+        );
         if event::poll(timeout)?
             && let Event::Key(key) = event::read()?
         {

@@ -3,8 +3,35 @@ use ratatui::prelude::*;
 use ratatui::symbols::border;
 use ratatui::widgets::Borders;
 use ratatui_hypertile::StateError;
+use std::time::Duration;
 
-/// Border styling for panes and the focused-pane highlight.
+/// Controls the small slide animation used when panes move.
+///
+/// Only pane moves are animated right now. If you enable this, make sure your
+/// event loop also checks [`HypertileRuntime::next_frame_in`](super::HypertileRuntime::next_frame_in)
+/// so the animation keeps advancing between input events.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AnimationConfig {
+    pub enabled: bool,
+    pub duration: Duration,
+    pub frame_interval: Duration,
+}
+
+impl Default for AnimationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            duration: Duration::from_millis(180),
+            frame_interval: Duration::from_millis(16),
+        }
+    }
+}
+
+/// Border look used by the built-in fallback pane rendering.
+///
+/// Plugins that fully paint their own content can ignore this. It mainly
+/// matters for the placeholder pane and for apps that rely on the default pane
+/// frame.
 #[derive(Debug, Clone)]
 pub struct BorderConfig {
     pub borders: Borders,
@@ -26,25 +53,27 @@ impl Default for BorderConfig {
     }
 }
 
-/// Chooses which plugin appears after a split shortcut.
+/// Decides what a split shortcut should put in the new pane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SplitBehavior {
-    /// Mount the configured default split plugin type.
+    /// Use the plugin name set on the builder or runtime.
     DefaultPlugin,
-    /// Mount the built-in placeholder plugin.
+    /// Start with the built-in placeholder pane.
     Placeholder,
-    /// Open the plugin palette so the user can choose a plugin.
+    /// Open the palette and let the user pick a plugin right away.
     PromptPalette,
 }
 
-/// `Layout` captures keys for tiling, `PluginInput` forwards them to the focused plugin.
+/// Tells the runtime where keyboard input goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputMode {
+    /// Keys drive focus, splits, movement, resize, and the palette.
     Layout,
+    /// Keys are forwarded to the focused plugin.
     PluginInput,
 }
 
-/// Wraps layout-state and registry errors produced by [`super::HypertileRuntime`].
+/// Errors returned by [`HypertileRuntime`](super::HypertileRuntime).
 #[derive(Debug, Clone)]
 pub enum RuntimeError {
     State(StateError),

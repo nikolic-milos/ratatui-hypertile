@@ -1,3 +1,4 @@
+mod animation;
 mod builder;
 mod constants;
 #[cfg(feature = "crossterm")]
@@ -14,29 +15,42 @@ pub(crate) mod workspace;
 use crate::registry::{HypertilePlugin, Registry};
 use ratatui::layout::{Direction, Rect};
 use ratatui_hypertile::{
-    EventOutcome, Hypertile as CoreHypertile, HypertileEvent, KeyChord, KeyCode, PaneId,
-    PaneSnapshot, raw, raw::Node as CoreNode,
+    EventOutcome, Hypertile as CoreHypertile, HypertileAction, HypertileEvent, KeyChord, KeyCode,
+    PaneId, PaneSnapshot, raw, raw::Node as CoreNode,
 };
 use std::collections::HashSet;
+use std::time::{Duration, Instant};
 
 pub use builder::HypertileRuntimeBuilder;
 #[cfg(feature = "crossterm")]
 pub use crossterm::{event_from_crossterm, keychord_from_crossterm};
 pub use keymap::MoveBindings;
 pub use tab_bar::{TabBar, TabBarItem};
-pub use types::{BorderConfig, InputMode, RuntimeError, SplitBehavior};
+pub use types::{AnimationConfig, BorderConfig, InputMode, RuntimeError, SplitBehavior};
 pub use widget::{HypertileView, ModeIndicator};
 pub use workspace::{WorkspaceAction, WorkspaceRuntime};
 
+use animation::AnimationState;
 use constants::DEFAULT_PLUGIN_TYPE;
 use keymap::RuntimeAction;
 use palette::PaletteState;
 
-/// Core engine, plugins, modal input, and palette.
+/// Ready-made runtime for apps that want tiling plus plugins without building
+/// an event loop from scratch.
 ///
-/// `i` enters plugin input mode, `ESC` returns to layout mode.
-/// Use the core [`Hypertile`](ratatui_hypertile::Hypertile) directly
-/// if you want custom input handling.
+/// It owns the core layout engine, a plugin registry, the built-in palette,
+/// and the default layout-mode key handling. A typical loop is:
+///
+/// 1. register your plugin types
+/// 2. send input through [`handle_event`](Self::handle_event) or
+///    [`try_handle_event`](Self::try_handle_event)
+/// 3. draw with [`render`](Self::render)
+/// 4. if animations are enabled, use [`next_frame_in`](Self::next_frame_in)
+///    to decide when to wake up for the next frame
+///
+/// `i` enters plugin input mode and `Esc` returns to layout mode. Use the core
+/// [`Hypertile`](ratatui_hypertile::Hypertile) directly if you want full
+/// control over input and rendering.
 ///
 /// ```
 /// use ratatui_hypertile_extras::HypertileRuntime;
@@ -54,6 +68,8 @@ pub struct HypertileRuntime {
     move_bindings: MoveBindings,
     split_behavior: SplitBehavior,
     border_config: BorderConfig,
+    animation_config: AnimationConfig,
+    animation_state: AnimationState,
 }
 
 impl Default for HypertileRuntime {
@@ -123,6 +139,29 @@ impl HypertileRuntime {
         self.border_config = config;
     }
 
+    pub fn animation_config(&self) -> AnimationConfig {
+        self.animation_config
+    }
+
+    pub fn set_animation_config(&mut self, config: AnimationConfig) {
+        self.animation_config = config;
+        if !config.enabled {
+            self.animation_state.clear();
+        }
+    }
+
+    /// Tells your event loop when to draw again for an in-flight move animation.
+    ///
+    /// When this returns `None`, there is no pending animation work. The usual
+    /// pattern is to combine this with your normal input timeout and redraw
+    /// when whichever one happens first.
+    pub fn next_frame_in(&self) -> Option<Duration> {
+        self.animation_state
+            .next_frame_in(Instant::now(), self.animation_config)
+    }
+
+    /// Registers a plugin under a string name so splits, palette actions, or
+    /// explicit replacement calls can create it later.
     pub fn register_plugin_type<F, P>(&mut self, plugin_type: &str, factory: F)
     where
         F: Fn() -> P + 'static,
@@ -148,19 +187,24 @@ impl HypertileRuntime {
         self.core.panes()
     }
 
-    /// Replaces the tree and syncs plugins.
+    /// Replaces the whole tree and remounts placeholder plugins where needed.
+    ///
+    /// Use this when you already have a layout tree you want the runtime to
+    /// own. Any old animation state is dropped.
     pub fn set_root(&mut self, root: CoreNode) -> Result<(), RuntimeError> {
         self.core.set_root(root)?;
+        self.animation_state.clear();
         self.sync_registry_to_core();
         Ok(())
     }
 
     pub fn reset(&mut self) {
         self.core.reset();
+        self.animation_state.clear();
         self.sync_registry_to_core();
     }
 
-    /// Splits the focused pane and mounts a new plugin.
+    /// Splits the focused pane and mounts a fresh plugin instance in the new pane.
     pub fn split_focused(
         &mut self,
         direction: Direction,
@@ -170,16 +214,18 @@ impl HypertileRuntime {
         let pane_id = self.core.split_focused(direction)?;
         self.registry
             .mount_plugin_instance(pane_id, plugin_type, plugin);
+        self.animation_state.clear();
         Ok(pane_id)
     }
 
     pub fn close_focused(&mut self) -> Result<PaneId, RuntimeError> {
         let removed_id = self.core.close_focused()?;
         self.registry.remove_plugin_if_exists(removed_id);
+        self.animation_state.clear();
         Ok(removed_id)
     }
 
-    /// Unmounts the focused pane's current plugin and mounts a new `plugin_type`.
+    /// Replaces the focused pane's plugin without changing the layout.
     pub fn replace_focused_plugin(&mut self, plugin_type: &str) -> Result<(), RuntimeError> {
         let Some(pane_id) = self.core.focused_pane() else {
             return Err(RuntimeError::NoFocusedPane);
@@ -192,7 +238,10 @@ impl HypertileRuntime {
         Ok(())
     }
 
-    /// Focuses `pane_id`, then replaces its plugin with a new `plugin_type` instance.
+    /// Replaces one pane's plugin by id.
+    ///
+    /// This also focuses that pane so follow-up layout commands keep working on
+    /// the pane you just changed.
     pub fn replace_pane_plugin(
         &mut self,
         pane_id: PaneId,
@@ -209,10 +258,14 @@ impl HypertileRuntime {
 
     pub fn set_focused_ratio(&mut self, ratio: f32) -> Result<(), RuntimeError> {
         self.core.set_focused_ratio(ratio)?;
+        self.animation_state.clear();
         Ok(())
     }
 
-    /// Handles one event and returns any runtime error directly.
+    /// Handles one event and gives layout or registry errors back to the caller.
+    ///
+    /// Use this if your app wants to log failures or show them to the user
+    /// instead of silently treating them as ignored input.
     pub fn try_handle_event(
         &mut self,
         event: HypertileEvent,
@@ -222,7 +275,7 @@ impl HypertileRuntime {
         }
 
         match event {
-            HypertileEvent::Action(action) => Ok(self.core.apply_action(action)),
+            HypertileEvent::Action(action) => Ok(self.apply_core_action(action)),
             HypertileEvent::Tick => Ok(self.registry.broadcast_event(&HypertileEvent::Tick)),
             HypertileEvent::Key(chord) => {
                 if chord.code == KeyCode::Escape && chord.modifiers.is_empty() {
@@ -243,7 +296,8 @@ impl HypertileRuntime {
         }
     }
 
-    /// Like [`try_handle_event`](Self::try_handle_event), but returns `Ignored` on error.
+    /// Like [`try_handle_event`](Self::try_handle_event), but turns errors into
+    /// [`EventOutcome::Ignored`](ratatui_hypertile::EventOutcome::Ignored).
     pub fn handle_event(&mut self, event: HypertileEvent) -> EventOutcome {
         self.try_handle_event(event)
             .unwrap_or(EventOutcome::Ignored)
@@ -251,7 +305,7 @@ impl HypertileRuntime {
 
     fn handle_layout_key(&mut self, chord: KeyChord) -> Result<EventOutcome, RuntimeError> {
         match self.default_layout_action(chord) {
-            Some(RuntimeAction::Core(action)) => Ok(self.core.apply_action(action)),
+            Some(RuntimeAction::Core(action)) => Ok(self.apply_core_action(action)),
             Some(RuntimeAction::SplitDefault(direction)) => self.handle_split_shortcut(direction),
             Some(RuntimeAction::OpenPalette) => self.open_palette(),
             Some(RuntimeAction::InteractFocused) => self.handle_interact_focused(),
@@ -305,6 +359,64 @@ impl HypertileRuntime {
             return EventOutcome::Ignored;
         };
         plugin.on_event(event)
+    }
+
+    fn apply_core_action(&mut self, action: HypertileAction) -> EventOutcome {
+        let can_animate = self.can_animate_action(action);
+        let now = Instant::now();
+        if can_animate {
+            self.capture_displayed_rects(now);
+        }
+
+        let outcome = self.core.apply_action(action);
+        if !outcome.is_consumed() {
+            return outcome;
+        }
+
+        if can_animate {
+            self.start_action_animation(now);
+        } else if Self::action_changes_layout(action) {
+            self.animation_state.clear();
+        }
+
+        outcome
+    }
+
+    fn can_animate_action(&self, action: HypertileAction) -> bool {
+        self.animation_config.enabled
+            && matches!(action, HypertileAction::MoveFocused { .. })
+            && self.animation_state.last_area().is_some()
+    }
+
+    fn action_changes_layout(action: HypertileAction) -> bool {
+        matches!(
+            action,
+            HypertileAction::SplitFocused { .. }
+                | HypertileAction::CloseFocused
+                | HypertileAction::ResizeFocused { .. }
+                | HypertileAction::SetFocusedRatio { .. }
+                | HypertileAction::MoveFocused { .. }
+        )
+    }
+
+    fn capture_displayed_rects(&mut self, now: Instant) -> bool {
+        let Some(area) = self.animation_state.last_area() else {
+            return false;
+        };
+        self.core.compute_layout(area);
+        self.animation_state
+            .capture_before(area, self.core.state().panes(), now);
+        true
+    }
+
+    fn start_action_animation(&mut self, now: Instant) {
+        let Some(area) = self.animation_state.last_area() else {
+            return;
+        };
+
+        self.core.compute_layout(area);
+        self.animation_state
+            .start(area, self.core.state().panes(), now, self.animation_config);
     }
 
     fn sync_registry_to_core(&mut self) {
