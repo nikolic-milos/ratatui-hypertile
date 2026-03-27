@@ -435,7 +435,7 @@ dependencies = [
 
 [[package]]
 name = "ratatui-hypertile"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "crossterm",
  "ratatui",
@@ -444,7 +444,7 @@ dependencies = [
 
 [[package]]
 name = "ratatui-hypertile-extras"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "crossterm",
  "ratatui",
