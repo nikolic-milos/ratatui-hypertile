@@ -91,7 +91,7 @@ impl HypertileState {
         };
 
         let next_id = if !self.sorted_panes.is_empty() {
-            if self.sorted_pane_index.len() != self.sorted_panes.len() {
+            if self.sorted_index_dirty {
                 self.sorted_pane_index.clear();
                 self.sorted_pane_index.extend(
                     self.sorted_panes
@@ -99,6 +99,7 @@ impl HypertileState {
                         .enumerate()
                         .map(|(idx, (id, _))| (*id, idx)),
                 );
+                self.sorted_index_dirty = false;
             }
             Self::cycle_in_sorted(
                 &self.sorted_panes,

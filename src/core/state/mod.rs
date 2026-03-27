@@ -14,7 +14,7 @@ use std::collections::HashMap;
 
 /// Mutable tree state.
 ///
-/// Prefer using [`Hypertile`](crate::Hypertile) instead of this directly.
+/// Prefer [`Hypertile`](crate::Hypertile) instead of using this directly.
 #[derive(Debug, Clone)]
 pub struct HypertileState {
     root: Node,
@@ -24,6 +24,7 @@ pub struct HypertileState {
     layout_cache: Vec<(PaneId, Rect)>,
     sorted_panes: Vec<(PaneId, Rect)>,
     sorted_pane_index: HashMap<PaneId, usize>,
+    sorted_index_dirty: bool,
     dirty: bool,
     last_area: Option<Rect>,
     highlight_focus: bool,
@@ -50,6 +51,7 @@ impl HypertileState {
             layout_cache: Vec::new(),
             sorted_panes: Vec::new(),
             sorted_pane_index: HashMap::new(),
+            sorted_index_dirty: true,
             dirty: true,
             last_area: None,
             highlight_focus: true,
@@ -110,6 +112,7 @@ impl HypertileState {
                 (ra.y, ra.x, *id_a).cmp(&(rb.y, rb.x, *id_b))
             });
         self.sorted_pane_index.clear();
+        self.sorted_index_dirty = true;
 
         self.last_area = Some(area);
         self.dirty = false;
@@ -120,6 +123,7 @@ impl HypertileState {
         self.layout_cache.clear();
         self.sorted_panes.clear();
         self.sorted_pane_index.clear();
+        self.sorted_index_dirty = true;
     }
 
     pub fn pane_rect(&self, id: PaneId) -> Option<Rect> {
