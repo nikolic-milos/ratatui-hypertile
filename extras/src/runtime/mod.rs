@@ -91,8 +91,16 @@ impl HypertileRuntime {
         &self.core
     }
 
+    pub fn core_mut(&mut self) -> &mut CoreHypertile {
+        &mut self.core
+    }
+
     pub fn registry(&self) -> &Registry {
         &self.registry
+    }
+
+    pub fn registry_mut(&mut self) -> &mut Registry {
+        &mut self.registry
     }
 
     pub fn mode(&self) -> InputMode {
