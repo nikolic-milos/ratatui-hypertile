@@ -19,6 +19,7 @@ use ratatui_hypertile::{
     PaneId, PaneSnapshot, raw, raw::Node as CoreNode,
 };
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 pub use builder::HypertileRuntimeBuilder;
@@ -63,7 +64,7 @@ pub struct HypertileRuntime {
     registry: Registry,
     mode: InputMode,
     palette: PaletteState,
-    default_split_plugin_type: String,
+    default_split_plugin_type: Arc<str>,
     default_move_scope: ratatui_hypertile::MoveScope,
     move_bindings: MoveBindings,
     split_behavior: SplitBehavior,

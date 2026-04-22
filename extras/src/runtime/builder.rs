@@ -9,6 +9,7 @@ use crate::runtime::{
     AnimationConfig, BorderConfig, HypertileRuntime, InputMode, MoveBindings, SplitBehavior,
 };
 use ratatui_hypertile::{HypertileBuilder as CoreBuilder, MoveScope, PaneId, SplitPolicy};
+use std::sync::Arc;
 
 /// Builder for [`HypertileRuntime`](super::HypertileRuntime).
 ///
@@ -30,7 +31,7 @@ use ratatui_hypertile::{HypertileBuilder as CoreBuilder, MoveScope, PaneId, Spli
 #[derive(Debug, Clone)]
 pub struct HypertileRuntimeBuilder {
     pub(super) core_builder: CoreBuilder,
-    pub(super) default_split_plugin_type: String,
+    pub(super) default_split_plugin_type: Arc<str>,
     pub(super) palette_width_percent: u16,
     pub(super) palette_height_percent: u16,
     pub(super) palette_max_items: usize,
@@ -45,7 +46,7 @@ impl Default for HypertileRuntimeBuilder {
     fn default() -> Self {
         Self {
             core_builder: CoreBuilder::default(),
-            default_split_plugin_type: DEFAULT_PLUGIN_TYPE.to_string(),
+            default_split_plugin_type: Arc::from(DEFAULT_PLUGIN_TYPE),
             palette_width_percent: DEFAULT_PALETTE_WIDTH_PERCENT,
             palette_height_percent: DEFAULT_PALETTE_HEIGHT_PERCENT,
             palette_max_items: DEFAULT_PALETTE_MAX_ITEMS,
@@ -67,7 +68,7 @@ impl HypertileRuntimeBuilder {
     /// Chooses which plugin new panes get when a split shortcut should not ask
     /// the user first.
     pub fn with_default_split_plugin(mut self, plugin_type: &str) -> Self {
-        self.default_split_plugin_type = plugin_type.to_string();
+        self.default_split_plugin_type = Arc::from(plugin_type);
         self
     }
 
