@@ -1,4 +1,4 @@
-use crate::core::PaneId;
+use crate::core::{PaneId, normalize_ratio};
 use ratatui::layout::Rect;
 
 /// Split ratio policy.
@@ -25,7 +25,7 @@ impl SplitPolicy {
         match self {
             Self::Half => 0.5,
             Self::Golden => 0.618,
-            Self::Fixed(ratio) => ratio,
+            Self::Fixed(ratio) => normalize_ratio(ratio),
         }
     }
 }

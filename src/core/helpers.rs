@@ -26,7 +26,7 @@ pub(super) fn validate_unique_pane_ids(node: &Node) -> Result<(), StateError> {
     walk(node, &mut seen)
 }
 
-pub(super) fn normalize_ratio(ratio: f32) -> f32 {
+pub(crate) fn normalize_ratio(ratio: f32) -> f32 {
     if !ratio.is_finite() {
         return 0.5;
     }
