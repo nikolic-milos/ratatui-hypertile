@@ -282,7 +282,7 @@ mod tests {
 
     struct Dummy;
     impl HypertilePlugin for Dummy {
-        fn render(&self, _area: Rect, _buf: &mut Buffer, _is_focused: bool) {}
+        fn render(&mut self, _area: Rect, _buf: &mut Buffer, _is_focused: bool) {}
     }
 
     #[test]

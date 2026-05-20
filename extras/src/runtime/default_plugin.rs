@@ -20,7 +20,7 @@ impl DefaultBlockPlugin {
 }
 
 impl HypertilePlugin for DefaultBlockPlugin {
-    fn render(&self, area: Rect, buf: &mut Buffer, is_focused: bool) {
+    fn render(&mut self, area: Rect, buf: &mut Buffer, is_focused: bool) {
         let mut block = Block::default()
             .borders(Borders::ALL)
             .title(self.title.as_str());
