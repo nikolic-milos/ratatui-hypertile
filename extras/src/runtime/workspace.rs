@@ -4,8 +4,13 @@ use std::time::Duration;
 
 use super::HypertileRuntime;
 
+/// Represents a tab in the application.
 struct Tab {
+    /// Unique identifier.
+    tab_id: usize,
+    /// Display text shown in the tab header.
     label: String,
+    /// Execution environment for the tab's content.
     runtime: HypertileRuntime,
 }
 
@@ -15,8 +20,14 @@ struct Tab {
 /// workspace model without building it yourself. It intercepts a few `Ctrl+...`
 /// keys for tab management and forwards everything else to the active tab.
 pub struct WorkspaceRuntime {
+    /// Manages the collection of open tabs in the workspace.
     tabs: Vec<Tab>,
+    /// Index of the currently focused tab.
     active: usize,
+    /// Monotonically increasing source of unique identifiers for tabs. Never
+    /// decrements, even when tabs are closed.
+    tabs_ids: usize,
+    /// Produces new tab runtimes on demand.
     factory: Box<dyn Fn() -> HypertileRuntime>,
 }
 
@@ -48,8 +59,10 @@ impl WorkspaceRuntime {
             tabs: vec![Tab {
                 label: "1".to_string(),
                 runtime: first,
+                tab_id: 0,
             }],
             active: 0,
+            tabs_ids: 1,
             factory: Box::new(factory),
         }
     }
@@ -75,6 +88,10 @@ impl WorkspaceRuntime {
         self.active
     }
 
+    pub fn active_tab_id(&self) -> usize {
+        self.tabs[self.active].tab_id
+    }
+
     pub fn tab_labels(&self) -> impl Iterator<Item = (&str, bool)> {
         self.tabs
             .iter()
@@ -86,7 +103,12 @@ impl WorkspaceRuntime {
     pub fn new_tab(&mut self) {
         let label = (self.tabs.len() + 1).to_string();
         let runtime = (self.factory)();
-        self.tabs.push(Tab { label, runtime });
+        self.tabs.push(Tab {
+            label,
+            runtime,
+            tab_id: self.tabs_ids,
+        });
+        self.tabs_ids += 1;
         self.active = self.tabs.len() - 1;
     }
 
