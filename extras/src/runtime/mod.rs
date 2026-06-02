@@ -180,7 +180,7 @@ impl HypertileRuntime {
     /// Registers a plugin under a string name so splits, palette actions, or
     /// explicit replacement calls can create it later.
     ///
-    /// Captured config need not be `Copy`; see
+    /// Captured config does not need to be `Copy`; see
     /// [`Registry::register_plugin_type`](crate::Registry::register_plugin_type).
     pub fn register_plugin_type<F, P>(&mut self, plugin_type: &str, factory: F)
     where
