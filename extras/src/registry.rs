@@ -45,6 +45,34 @@ pub struct Registry {
 impl Registry {
     /// Registers a factory for `plugin_type`.
     /// Registering the same name again replaces the previous factory.
+    ///
+    /// The factory runs once for every instance, so the same type can be used
+    /// for many panes. The captured config does not have to be `Copy`; clone it
+    /// inside the closure, or share it with an [`Arc`](std::sync::Arc). To use a
+    /// single instance that you build yourself, call
+    /// [`mount_plugin_instance`](Self::mount_plugin_instance) instead.
+    ///
+    /// ```
+    /// use ratatui_hypertile_extras::{HypertilePlugin, Registry};
+    /// use ratatui::{buffer::Buffer, layout::Rect};
+    /// use std::sync::Arc;
+    ///
+    /// struct Theme;
+    /// struct Status {
+    ///     theme: Arc<Theme>,
+    /// }
+    /// impl HypertilePlugin for Status {
+    ///     fn render(&mut self, _area: Rect, _buf: &mut Buffer, _focused: bool) {
+    ///         let _ = &self.theme;
+    ///     }
+    /// }
+    ///
+    /// let theme = Arc::new(Theme);
+    /// let mut registry = Registry::default();
+    /// registry.register_plugin_type("status", move || Status {
+    ///     theme: Arc::clone(&theme),
+    /// });
+    /// ```
     pub fn register_plugin_type<F, P>(&mut self, plugin_type: &str, factory: F)
     where
         F: Fn() -> P + 'static,
