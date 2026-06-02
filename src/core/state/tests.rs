@@ -93,6 +93,70 @@ fn layout_recomputes_when_area_changes() {
 }
 
 #[test]
+fn pane_at_hits_cached_layout_rectangles() {
+    let mut state = HypertileState::new();
+    let right = state.allocate_pane_id();
+    state.split(Direction::Horizontal, right).unwrap();
+
+    assert_eq!(state.pane_at(1, 1), None);
+
+    state.compute_layout(area(100, 20));
+
+    assert_eq!(state.pane_at(1, 1), Some(PaneId::ROOT));
+    assert_eq!(state.pane_at(75, 1), Some(right));
+    assert_eq!(state.pane_at(100, 1), None);
+    assert_eq!(state.pane_at(1, 20), None);
+}
+
+#[test]
+fn split_at_hits_cached_split_borders() {
+    let mut state = HypertileState::new();
+    let right = state.allocate_pane_id();
+    let bottom_right = state.allocate_pane_id();
+    state.split(Direction::Horizontal, right).unwrap();
+    state.split(Direction::Vertical, bottom_right).unwrap();
+    state.compute_layout(area(100, 20));
+
+    let root_split = state.split_at(50, 5, 1).unwrap();
+    assert_eq!(root_split.path, Vec::<usize>::new());
+    assert_eq!(root_split.direction, Direction::Horizontal);
+
+    let nested_split = state.split_at(75, 10, 1).unwrap();
+    assert_eq!(nested_split.path, vec![1]);
+    assert_eq!(nested_split.direction, Direction::Vertical);
+}
+
+#[test]
+fn set_split_ratio_by_path_updates_target_split() {
+    let mut state = HypertileState::new();
+    let right = state.allocate_pane_id();
+    let bottom_right = state.allocate_pane_id();
+    state.split(Direction::Horizontal, right).unwrap();
+    state.split(Direction::Vertical, bottom_right).unwrap();
+
+    assert!(state.set_split_ratio(&[1], 0.25).unwrap());
+    state.compute_layout(area(100, 20));
+
+    assert_eq!(state.pane_rect(right).unwrap().height, 5);
+    assert_eq!(state.pane_rect(bottom_right).unwrap().y, 5);
+}
+
+#[test]
+fn swap_panes_moves_focus_with_pane_id() {
+    let mut state = HypertileState::new();
+    let right = state.allocate_pane_id();
+    state.split(Direction::Horizontal, right).unwrap();
+    state.focus_pane(PaneId::ROOT).unwrap();
+
+    assert!(state.swap_panes(PaneId::ROOT, right).unwrap());
+    state.compute_layout(area(100, 20));
+
+    assert_eq!(state.focused_pane(), Some(PaneId::ROOT));
+    assert_eq!(state.pane_rect(PaneId::ROOT).unwrap().x, 50);
+    assert_eq!(state.pane_rect(right).unwrap().x, 0);
+}
+
+#[test]
 fn move_pane_swaps_with_matching_axis() {
     let mut state = HypertileState::new();
     let right = state.allocate_pane_id();

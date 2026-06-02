@@ -5,6 +5,7 @@ mod constants;
 mod crossterm;
 mod default_plugin;
 mod keymap;
+mod mouse;
 mod palette;
 mod render;
 mod tab_bar;
@@ -24,7 +25,10 @@ use std::time::{Duration, Instant};
 
 pub use builder::HypertileRuntimeBuilder;
 #[cfg(feature = "crossterm")]
-pub use crossterm::{event_from_crossterm, keychord_from_crossterm};
+pub use crossterm::{
+    event_from_crossterm, hypertile_event_from_crossterm, keychord_from_crossterm,
+    mouse_event_from_crossterm,
+};
 pub use keymap::MoveBindings;
 pub use tab_bar::{TabBar, TabBarItem};
 pub use types::{AnimationConfig, BorderConfig, InputMode, RuntimeError, SplitBehavior};
@@ -34,6 +38,7 @@ pub use workspace::{WorkspaceAction, WorkspaceRuntime};
 use animation::AnimationState;
 use constants::DEFAULT_PLUGIN_TYPE;
 use keymap::RuntimeAction;
+use mouse::MouseDragState;
 use palette::PaletteState;
 
 /// Ready-made runtime for apps that want tiling plus plugins without building
@@ -71,6 +76,7 @@ pub struct HypertileRuntime {
     border_config: BorderConfig,
     animation_config: AnimationConfig,
     animation_state: AnimationState,
+    mouse_drag: MouseDragState,
 }
 
 impl Default for HypertileRuntime {
@@ -214,6 +220,7 @@ impl HypertileRuntime {
     pub fn set_root(&mut self, root: CoreNode) -> Result<(), RuntimeError> {
         self.core.set_root(root)?;
         self.animation_state.clear();
+        self.mouse_drag.clear();
         self.sync_registry_to_core();
         Ok(())
     }
@@ -221,6 +228,7 @@ impl HypertileRuntime {
     pub fn reset(&mut self) {
         self.core.reset();
         self.animation_state.clear();
+        self.mouse_drag.clear();
         self.sync_registry_to_core();
     }
 
@@ -235,6 +243,7 @@ impl HypertileRuntime {
         self.registry
             .mount_plugin_instance(pane_id, plugin_type, plugin);
         self.animation_state.clear();
+        self.mouse_drag.clear();
         Ok(pane_id)
     }
 
@@ -242,6 +251,7 @@ impl HypertileRuntime {
         let removed_id = self.core.close_focused()?;
         self.registry.remove_plugin_if_exists(removed_id);
         self.animation_state.clear();
+        self.mouse_drag.clear();
         Ok(removed_id)
     }
 
@@ -279,6 +289,7 @@ impl HypertileRuntime {
     pub fn set_focused_ratio(&mut self, ratio: f32) -> Result<(), RuntimeError> {
         self.core.set_focused_ratio(ratio)?;
         self.animation_state.clear();
+        self.mouse_drag.clear();
         Ok(())
     }
 
@@ -313,6 +324,7 @@ impl HypertileRuntime {
                     }
                 }
             }
+            HypertileEvent::Mouse(mouse) => self.handle_mouse_event(mouse),
         }
     }
 
@@ -375,6 +387,14 @@ impl HypertileRuntime {
         let Some(pane_id) = self.core.focused_pane() else {
             return EventOutcome::Ignored;
         };
+        self.forward_to_plugin_id(pane_id, event)
+    }
+
+    pub(super) fn forward_to_plugin_id(
+        &mut self,
+        pane_id: PaneId,
+        event: &HypertileEvent,
+    ) -> EventOutcome {
         let Some(plugin) = self.registry.plugin_mut(pane_id) else {
             return EventOutcome::Ignored;
         };
@@ -397,6 +417,9 @@ impl HypertileRuntime {
             self.start_action_animation(now);
         } else if Self::action_changes_layout(action) {
             self.animation_state.clear();
+        }
+        if Self::action_changes_layout(action) {
+            self.mouse_drag.clear();
         }
 
         outcome

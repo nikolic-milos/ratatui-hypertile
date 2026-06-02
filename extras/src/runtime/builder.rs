@@ -165,6 +165,7 @@ impl HypertileRuntimeBuilder {
             border_config: self.border_config,
             animation_config: self.animation_config,
             animation_state: Default::default(),
+            mouse_drag: Default::default(),
         }
     }
 }

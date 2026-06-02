@@ -36,9 +36,10 @@ mod widget;
 pub use crate::core::{PaneId, StateError};
 pub use crate::engine::{Hypertile, HypertileBuilder};
 pub use crate::input::{
-    EventOutcome, HypertileAction, HypertileEvent, KeyChord, KeyCode, Modifiers, MoveScope, Towards,
+    EventOutcome, HypertileAction, HypertileEvent, KeyChord, KeyCode, Modifiers, MouseButton,
+    MouseEvent, MouseEventKind, MoveScope, Towards,
 };
-pub use crate::types::{PaneSnapshot, SplitPolicy};
+pub use crate::types::{PaneSnapshot, SplitPolicy, SplitSnapshot};
 pub use crate::widget::HypertileWidget;
 
 /// Low-level tree types and state.
@@ -53,7 +54,7 @@ pub mod raw {
 pub mod prelude {
     pub use crate::{
         EventOutcome, Hypertile, HypertileAction, HypertileBuilder, HypertileEvent,
-        HypertileWidget, KeyChord, KeyCode, Modifiers, MoveScope, PaneId, PaneSnapshot,
-        SplitPolicy, StateError, Towards,
+        HypertileWidget, KeyChord, KeyCode, Modifiers, MouseButton, MouseEvent, MouseEventKind,
+        MoveScope, PaneId, PaneSnapshot, SplitPolicy, SplitSnapshot, StateError, Towards,
     };
 }

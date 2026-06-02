@@ -6,9 +6,11 @@ mod tests;
 
 use crate::core::helpers::{
     collect_pane_ids as collect_pane_ids_impl, compute_recursive, leftmost_leaf_path, max_pane_id,
-    normalize_tree, validate_unique_pane_ids,
+    normalize_tree, rect_contains, split_rect, validate_unique_pane_ids,
 };
 use crate::core::{Node, PaneId, StateError};
+use crate::types::SplitSnapshot;
+use ratatui::layout::Direction;
 use ratatui::layout::Rect;
 use std::collections::HashMap;
 
@@ -133,6 +135,22 @@ impl HypertileState {
             .map(|idx| self.layout_cache[idx].1)
     }
 
+    pub fn pane_at(&self, column: u16, row: u16) -> Option<PaneId> {
+        self.layout_cache
+            .iter()
+            .find_map(|&(id, rect)| rect_contains(rect, column, row).then_some(id))
+    }
+
+    pub fn split_at(&self, column: u16, row: u16, tolerance: u16) -> Option<SplitSnapshot> {
+        let area = self.last_area?;
+        let mut path = Vec::new();
+        let mut best = None;
+        find_split_at(
+            &self.root, area, column, row, tolerance, &mut path, &mut best,
+        );
+        best.map(|candidate| candidate.split)
+    }
+
     pub fn panes(&self) -> impl Iterator<Item = (PaneId, Rect)> + '_ {
         self.layout_cache.iter().copied()
     }
@@ -244,4 +262,92 @@ impl HypertileState {
 /// Doesn't need layout, walks the tree directly.
 pub fn collect_pane_ids(node: &Node) -> Vec<PaneId> {
     collect_pane_ids_impl(node)
+}
+
+struct SplitHitCandidate {
+    split: SplitSnapshot,
+    distance: u16,
+    depth: usize,
+}
+
+fn find_split_at(
+    node: &Node,
+    area: Rect,
+    column: u16,
+    row: u16,
+    tolerance: u16,
+    path: &mut Vec<usize>,
+    best: &mut Option<SplitHitCandidate>,
+) {
+    let Node::Split {
+        direction,
+        ratio,
+        first,
+        second,
+    } = node
+    else {
+        return;
+    };
+
+    let (first_area, second_area) = split_rect(area, *direction, *ratio);
+    if let Some(distance) = split_border_distance(area, *direction, first_area, column, row)
+        && distance <= tolerance
+    {
+        let candidate = SplitHitCandidate {
+            split: SplitSnapshot {
+                path: path.clone(),
+                rect: area,
+                direction: *direction,
+                ratio: *ratio,
+            },
+            distance,
+            depth: path.len(),
+        };
+        if best
+            .as_ref()
+            .is_none_or(|current| is_better_split_hit(&candidate, current))
+        {
+            *best = Some(candidate);
+        }
+    }
+
+    path.push(0);
+    find_split_at(first, first_area, column, row, tolerance, path, best);
+    path.pop();
+
+    path.push(1);
+    find_split_at(second, second_area, column, row, tolerance, path, best);
+    path.pop();
+}
+
+fn split_border_distance(
+    area: Rect,
+    direction: Direction,
+    first_area: Rect,
+    column: u16,
+    row: u16,
+) -> Option<u16> {
+    if !rect_contains(area, column, row) {
+        return None;
+    }
+
+    match direction {
+        Direction::Horizontal => Some(axis_distance(
+            column,
+            first_area.x.saturating_add(first_area.width),
+        )),
+        Direction::Vertical => Some(axis_distance(
+            row,
+            first_area.y.saturating_add(first_area.height),
+        )),
+    }
+}
+
+fn axis_distance(position: u16, target: u16) -> u16 {
+    position.abs_diff(target)
+}
+
+fn is_better_split_hit(candidate: &SplitHitCandidate, current: &SplitHitCandidate) -> bool {
+    (candidate.distance, std::cmp::Reverse(candidate.depth))
+        < (current.distance, std::cmp::Reverse(current.depth))
 }

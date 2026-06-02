@@ -1,6 +1,6 @@
 use crate::core::{HypertileState, Node, PaneId, StateError};
 use crate::input::{EventOutcome, HypertileAction, HypertileEvent, MoveScope};
-use crate::types::{PaneSnapshot, SplitPolicy};
+use crate::types::{PaneSnapshot, SplitPolicy, SplitSnapshot};
 use ratatui::layout::{Direction, Rect};
 
 const DEFAULT_RESIZE_STEP: f32 = 0.05;
@@ -170,6 +170,28 @@ impl Hypertile {
         self.state.pane_rect(pane_id)
     }
 
+    #[must_use]
+    pub fn pane_at(&self, column: u16, row: u16) -> Option<PaneId> {
+        self.state.pane_at(column, row)
+    }
+
+    #[must_use]
+    pub fn pane_snapshot_at(&self, column: u16, row: u16) -> Option<PaneSnapshot> {
+        let id = self.state.pane_at(column, row)?;
+        let rect = self.state.pane_rect(id)?;
+        let focused = self.state.focused_pane();
+        Some(PaneSnapshot {
+            id,
+            rect,
+            is_focused: self.state.focus_highlight() && focused == Some(id),
+        })
+    }
+
+    #[must_use]
+    pub fn split_at(&self, column: u16, row: u16, tolerance: u16) -> Option<SplitSnapshot> {
+        self.state.split_at(column, row, tolerance)
+    }
+
     /// `0` means first child, `1` means second.
     #[must_use]
     pub fn pane_path(&self, pane_id: PaneId) -> Option<Vec<usize>> {
@@ -235,6 +257,26 @@ impl Hypertile {
         self.state.set_focused_ratio(ratio).map(|_| ())
     }
 
+    pub fn set_split_ratio(&mut self, split_path: &[usize], ratio: f32) -> Result<(), StateError> {
+        self.state.set_split_ratio(split_path, ratio).map(|_| ())
+    }
+
+    pub fn try_set_split_ratio(
+        &mut self,
+        split_path: &[usize],
+        ratio: f32,
+    ) -> Result<bool, StateError> {
+        self.state.set_split_ratio(split_path, ratio)
+    }
+
+    pub fn swap_panes(&mut self, first: PaneId, second: PaneId) -> Result<(), StateError> {
+        self.state.swap_panes(first, second).map(|_| ())
+    }
+
+    pub fn try_swap_panes(&mut self, first: PaneId, second: PaneId) -> Result<bool, StateError> {
+        self.state.swap_panes(first, second)
+    }
+
     /// Like [`try_apply_action`](Self::try_apply_action) but returns `Ignored` on error.
     pub fn apply_action(&mut self, action: HypertileAction) -> EventOutcome {
         self.try_apply_action(action)
@@ -282,7 +324,9 @@ impl Hypertile {
     pub fn try_handle_event(&mut self, event: HypertileEvent) -> Result<EventOutcome, StateError> {
         match event {
             HypertileEvent::Action(action) => self.try_apply_action(action),
-            HypertileEvent::Key(_) | HypertileEvent::Tick => Ok(EventOutcome::Ignored),
+            HypertileEvent::Key(_) | HypertileEvent::Mouse(_) | HypertileEvent::Tick => {
+                Ok(EventOutcome::Ignored)
+            }
         }
     }
 

@@ -4,7 +4,10 @@
 //! `s`/`v` split, `d` close, `[`/`]` resize, `p` palette, `i` input,
 //! `Ctrl+t/w` tabs, `Ctrl+c` quit.
 
-use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use crossterm::{
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
+    execute,
+};
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},
@@ -16,7 +19,7 @@ use ratatui::{
 use ratatui_hypertile::{EventOutcome, HypertileEvent, KeyCode as HtKeyCode, PaneId};
 use ratatui_hypertile_extras::{
     AnimationConfig, HypertilePlugin, HypertileRuntime, ModeIndicator, SplitBehavior,
-    WorkspaceRuntime, event_from_crossterm,
+    WorkspaceRuntime, hypertile_event_from_crossterm,
 };
 use std::{
     collections::VecDeque,
@@ -50,6 +53,10 @@ fn build_runtime() -> HypertileRuntime {
 
 fn main() -> io::Result<()> {
     let mut terminal = ratatui::init();
+    if let Err(err) = execute!(io::stdout(), EnableMouseCapture) {
+        ratatui::restore();
+        return Err(err);
+    }
 
     let mut workspace = WorkspaceRuntime::new(build_runtime);
 
@@ -60,7 +67,9 @@ fn main() -> io::Result<()> {
     let _ = rt.split_focused(Direction::Horizontal, "network");
 
     let result = run(&mut terminal, &mut workspace);
+    let mouse_result = execute!(io::stdout(), DisableMouseCapture);
     ratatui::restore();
+    mouse_result?;
     result
 }
 
@@ -91,23 +100,29 @@ fn run(
             let [mode_area, hint_area] =
                 Layout::horizontal([Constraint::Length(10), Constraint::Min(0)]).areas(footer);
             ModeIndicator::new(rt.mode()).render(mode_area, frame.buffer_mut());
-            Paragraph::new("  Ctrl+t/w: tab | s/v: split | d: close | p: palette | i: input")
-                .style(Style::default().fg(Color::DarkGray))
-                .render(hint_area, frame.buffer_mut());
+            Paragraph::new(
+                "  click focus | drag panes/splits | s/v split | d close | p palette | i input",
+            )
+            .style(Style::default().fg(Color::DarkGray))
+            .render(hint_area, frame.buffer_mut());
         })?;
 
         let timeout = workspace.next_frame_in().map_or_else(
             || tick_rate.saturating_sub(last_tick.elapsed()),
             |frame| frame.min(tick_rate.saturating_sub(last_tick.elapsed())),
         );
-        if event::poll(timeout)?
-            && let Event::Key(key) = event::read()?
-        {
-            if key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL {
-                return Ok(());
-            }
-            if let Some(ev) = event_from_crossterm(key) {
-                workspace.handle_event(ev);
+        if event::poll(timeout)? {
+            match event::read()? {
+                Event::Key(key)
+                    if key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL =>
+                {
+                    return Ok(());
+                }
+                event => {
+                    if let Some(ev) = hypertile_event_from_crossterm(event) {
+                        workspace.handle_event(ev);
+                    }
+                }
             }
         }
 

@@ -1,0 +1,527 @@
+use crate::runtime::{HypertileRuntime, InputMode, RuntimeError};
+use ratatui::layout::{Direction, Rect};
+use ratatui_hypertile::{
+    EventOutcome, HypertileEvent, MouseButton, MouseEvent, MouseEventKind, PaneId,
+};
+use std::time::Instant;
+
+const SPLIT_HIT_TOLERANCE: u16 = 1;
+const MOVE_DRAG_THRESHOLD: u16 = 2;
+
+#[derive(Debug, Clone, Default)]
+pub(super) enum MouseDragState {
+    #[default]
+    None,
+    Resize {
+        split_path: Vec<usize>,
+        direction: Direction,
+        rect: Rect,
+    },
+    Move {
+        pane_id: PaneId,
+        start_column: u16,
+        start_row: u16,
+        current_column: u16,
+        current_row: u16,
+        origin: Rect,
+        preview_active: bool,
+    },
+}
+
+impl MouseDragState {
+    pub(super) fn clear(&mut self) {
+        *self = Self::None;
+    }
+
+    pub(super) fn dragged_pane(&self) -> Option<PaneId> {
+        match self {
+            Self::Move {
+                pane_id,
+                preview_active: true,
+                ..
+            } => Some(*pane_id),
+            _ => None,
+        }
+    }
+
+    pub(super) fn preview_rect(&self) -> Option<Rect> {
+        match self {
+            Self::Move {
+                start_column,
+                start_row,
+                current_column,
+                current_row,
+                origin,
+                preview_active: true,
+                ..
+            } => Some(translate_rect(
+                *origin,
+                i32::from(*current_column) - i32::from(*start_column),
+                i32::from(*current_row) - i32::from(*start_row),
+            )),
+            _ => None,
+        }
+    }
+}
+
+impl HypertileRuntime {
+    pub(super) fn handle_mouse_event(
+        &mut self,
+        mouse: MouseEvent,
+    ) -> Result<EventOutcome, RuntimeError> {
+        let target = self.core.pane_at(mouse.column, mouse.row);
+
+        match self.mode {
+            InputMode::Layout => self.handle_layout_mouse(mouse, target),
+            InputMode::PluginInput => self.handle_plugin_mouse(mouse, target),
+        }
+    }
+
+    fn handle_layout_mouse(
+        &mut self,
+        mouse: MouseEvent,
+        target: Option<PaneId>,
+    ) -> Result<EventOutcome, RuntimeError> {
+        match mouse.kind {
+            MouseEventKind::Down(MouseButton::Left) => self.start_layout_mouse_drag(mouse, target),
+            MouseEventKind::Drag(MouseButton::Left) => self.update_layout_mouse_drag(mouse),
+            MouseEventKind::Up(MouseButton::Left) => self.finish_layout_mouse_drag(mouse),
+            _ => Ok(EventOutcome::Ignored),
+        }
+    }
+
+    fn start_layout_mouse_drag(
+        &mut self,
+        mouse: MouseEvent,
+        target: Option<PaneId>,
+    ) -> Result<EventOutcome, RuntimeError> {
+        self.mouse_drag.clear();
+
+        if let Some(split) = self
+            .core
+            .split_at(mouse.column, mouse.row, SPLIT_HIT_TOLERANCE)
+        {
+            self.animation_state.clear();
+            self.mouse_drag = MouseDragState::Resize {
+                split_path: split.path,
+                direction: split.direction,
+                rect: split.rect,
+            };
+            return Ok(EventOutcome::Consumed);
+        }
+
+        let Some(pane_id) = target else {
+            return Ok(EventOutcome::Ignored);
+        };
+        let Some(origin) = self.core.pane_rect(pane_id) else {
+            return Ok(EventOutcome::Ignored);
+        };
+
+        self.core.focus_pane(pane_id)?;
+        self.animation_state.clear();
+        self.mouse_drag = MouseDragState::Move {
+            pane_id,
+            start_column: mouse.column,
+            start_row: mouse.row,
+            current_column: mouse.column,
+            current_row: mouse.row,
+            origin,
+            preview_active: false,
+        };
+        Ok(EventOutcome::Consumed)
+    }
+
+    fn update_layout_mouse_drag(
+        &mut self,
+        mouse: MouseEvent,
+    ) -> Result<EventOutcome, RuntimeError> {
+        let MouseDragState::Resize {
+            split_path,
+            direction,
+            rect,
+        } = self.mouse_drag.clone()
+        else {
+            return self.update_move_drag(mouse);
+        };
+
+        let ratio = ratio_from_mouse(direction, rect, mouse);
+        if self.core.try_set_split_ratio(&split_path, ratio)? {
+            self.animation_state.clear();
+        }
+        Ok(EventOutcome::Consumed)
+    }
+
+    fn update_move_drag(&mut self, mouse: MouseEvent) -> Result<EventOutcome, RuntimeError> {
+        let MouseDragState::Move {
+            start_column,
+            start_row,
+            current_column,
+            current_row,
+            preview_active,
+            ..
+        } = &mut self.mouse_drag
+        else {
+            return Ok(EventOutcome::Ignored);
+        };
+
+        *current_column = mouse.column;
+        *current_row = mouse.row;
+        if drag_threshold_met(*start_column, *start_row, mouse.column, mouse.row) {
+            *preview_active = true;
+        }
+        Ok(EventOutcome::Consumed)
+    }
+
+    fn finish_layout_mouse_drag(
+        &mut self,
+        mouse: MouseEvent,
+    ) -> Result<EventOutcome, RuntimeError> {
+        let (pane_id, start_column, start_row, origin, preview_active) =
+            match std::mem::take(&mut self.mouse_drag) {
+                MouseDragState::Move {
+                    pane_id,
+                    start_column,
+                    start_row,
+                    current_column: _,
+                    current_row: _,
+                    origin,
+                    preview_active,
+                } => (pane_id, start_column, start_row, origin, preview_active),
+                MouseDragState::Resize { .. } => return Ok(EventOutcome::Consumed),
+                MouseDragState::None => return Ok(EventOutcome::Ignored),
+            };
+
+        if !preview_active && !drag_threshold_met(start_column, start_row, mouse.column, mouse.row)
+        {
+            return Ok(EventOutcome::Consumed);
+        }
+
+        let preview = translate_rect(
+            origin,
+            i32::from(mouse.column) - i32::from(start_column),
+            i32::from(mouse.row) - i32::from(start_row),
+        );
+        let Some(target_id) = majority_overlap_target(self, pane_id, preview) else {
+            return Ok(EventOutcome::Consumed);
+        };
+        if target_id == pane_id {
+            return Ok(EventOutcome::Consumed);
+        }
+
+        let can_animate =
+            self.animation_config.enabled && self.animation_state.last_area().is_some();
+        let now = Instant::now();
+        if can_animate {
+            self.capture_displayed_rects(now);
+        }
+
+        if !self.core.try_swap_panes(pane_id, target_id)? {
+            return Ok(EventOutcome::Consumed);
+        }
+
+        if can_animate {
+            self.start_action_animation(now);
+        } else {
+            self.animation_state.clear();
+        }
+        Ok(EventOutcome::Consumed)
+    }
+
+    fn handle_plugin_mouse(
+        &mut self,
+        mouse: MouseEvent,
+        target: Option<PaneId>,
+    ) -> Result<EventOutcome, RuntimeError> {
+        let Some(pane_id) = target else {
+            return Ok(EventOutcome::Ignored);
+        };
+
+        if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
+            self.core.focus_pane(pane_id)?;
+        }
+
+        Ok(self.forward_to_plugin_id(pane_id, &HypertileEvent::Mouse(mouse)))
+    }
+}
+
+fn ratio_from_mouse(direction: Direction, rect: Rect, mouse: MouseEvent) -> f32 {
+    match direction {
+        Direction::Horizontal => {
+            if rect.width == 0 {
+                return 0.5;
+            }
+            let offset = mouse.column.saturating_sub(rect.x).min(rect.width);
+            f32::from(offset) / f32::from(rect.width)
+        }
+        Direction::Vertical => {
+            if rect.height == 0 {
+                return 0.5;
+            }
+            let offset = mouse.row.saturating_sub(rect.y).min(rect.height);
+            f32::from(offset) / f32::from(rect.height)
+        }
+    }
+}
+
+fn drag_threshold_met(start_column: u16, start_row: u16, column: u16, row: u16) -> bool {
+    start_column.abs_diff(column).max(start_row.abs_diff(row)) >= MOVE_DRAG_THRESHOLD
+}
+
+fn majority_overlap_target(
+    runtime: &HypertileRuntime,
+    dragged: PaneId,
+    preview: Rect,
+) -> Option<PaneId> {
+    let dragged_area = rect_area(preview);
+    if dragged_area == 0 {
+        return None;
+    }
+
+    runtime
+        .core
+        .state()
+        .panes()
+        .filter(|(pane_id, _)| *pane_id != dragged)
+        .filter_map(|(pane_id, rect)| {
+            let overlap = overlap_area(preview, rect);
+            (overlap.saturating_mul(2) > dragged_area).then_some((pane_id, overlap))
+        })
+        .max_by_key(|(_, overlap)| *overlap)
+        .map(|(pane_id, _)| pane_id)
+}
+
+fn translate_rect(rect: Rect, dx: i32, dy: i32) -> Rect {
+    Rect::new(
+        translate_u16(rect.x, dx),
+        translate_u16(rect.y, dy),
+        rect.width,
+        rect.height,
+    )
+}
+
+fn translate_u16(value: u16, delta: i32) -> u16 {
+    if delta.is_negative() {
+        value.saturating_sub(delta.unsigned_abs().min(u32::from(u16::MAX)) as u16)
+    } else {
+        value.saturating_add(delta.min(i32::from(u16::MAX)) as u16)
+    }
+}
+
+fn overlap_area(first: Rect, second: Rect) -> u32 {
+    let left = first.x.max(second.x);
+    let right = first
+        .x
+        .saturating_add(first.width)
+        .min(second.x.saturating_add(second.width));
+    let top = first.y.max(second.y);
+    let bottom = first
+        .y
+        .saturating_add(first.height)
+        .min(second.y.saturating_add(second.height));
+
+    if right <= left || bottom <= top {
+        return 0;
+    }
+
+    u32::from(right - left) * u32::from(bottom - top)
+}
+
+fn rect_area(rect: Rect) -> u32 {
+    u32::from(rect.width) * u32::from(rect.height)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::registry::HypertilePlugin;
+    use ratatui::{buffer::Buffer, layout::Direction, layout::Rect};
+    use ratatui_hypertile::{HypertileEvent, MouseButton, MouseEventKind};
+    use std::{cell::RefCell, rc::Rc};
+
+    struct RecordingPlugin {
+        events: Rc<RefCell<Vec<MouseEvent>>>,
+    }
+
+    impl HypertilePlugin for RecordingPlugin {
+        fn render(&mut self, _area: Rect, _buf: &mut Buffer, _is_focused: bool) {}
+
+        fn on_event(&mut self, event: &HypertileEvent) -> EventOutcome {
+            let HypertileEvent::Mouse(mouse) = event else {
+                return EventOutcome::Ignored;
+            };
+            self.events.borrow_mut().push(*mouse);
+            EventOutcome::Consumed
+        }
+    }
+
+    fn render_once(runtime: &mut HypertileRuntime, area: Rect) {
+        let mut buffer = Buffer::empty(area);
+        runtime.render(area, &mut buffer);
+    }
+
+    #[test]
+    fn layout_mode_left_click_focuses_hit_pane() {
+        let mut runtime = HypertileRuntime::new();
+        let right = runtime
+            .split_focused(Direction::Horizontal, "block")
+            .unwrap();
+        assert_eq!(runtime.focused_pane(), Some(right));
+
+        render_once(&mut runtime, Rect::new(0, 0, 100, 20));
+
+        let outcome = runtime.handle_event(HypertileEvent::Mouse(MouseEvent::new(
+            MouseEventKind::Down(MouseButton::Left),
+            1,
+            1,
+        )));
+
+        assert_eq!(outcome, EventOutcome::Consumed);
+        assert_eq!(runtime.focused_pane(), Some(PaneId::ROOT));
+    }
+
+    #[test]
+    fn layout_mode_drag_on_split_resizes_panes() {
+        let mut runtime = HypertileRuntime::new();
+        let right = runtime
+            .split_focused(Direction::Horizontal, "block")
+            .unwrap();
+        render_once(&mut runtime, Rect::new(0, 0, 100, 20));
+
+        let down = runtime.handle_event(HypertileEvent::Mouse(MouseEvent::new(
+            MouseEventKind::Down(MouseButton::Left),
+            50,
+            1,
+        )));
+        let drag = runtime.handle_event(HypertileEvent::Mouse(MouseEvent::new(
+            MouseEventKind::Drag(MouseButton::Left),
+            30,
+            1,
+        )));
+        let up = runtime.handle_event(HypertileEvent::Mouse(MouseEvent::new(
+            MouseEventKind::Up(MouseButton::Left),
+            30,
+            1,
+        )));
+        render_once(&mut runtime, Rect::new(0, 0, 100, 20));
+
+        assert_eq!(down, EventOutcome::Consumed);
+        assert_eq!(drag, EventOutcome::Consumed);
+        assert_eq!(up, EventOutcome::Consumed);
+        assert_eq!(runtime.pane_rect(PaneId::ROOT).unwrap().width, 30);
+        assert_eq!(runtime.pane_rect(right).unwrap().x, 30);
+    }
+
+    #[test]
+    fn layout_mode_drag_pane_to_pane_swaps_them() {
+        let mut runtime = HypertileRuntime::new();
+        let right = runtime
+            .split_focused(Direction::Horizontal, "block")
+            .unwrap();
+        render_once(&mut runtime, Rect::new(0, 0, 100, 20));
+
+        let down = runtime.handle_event(HypertileEvent::Mouse(MouseEvent::new(
+            MouseEventKind::Down(MouseButton::Left),
+            1,
+            1,
+        )));
+        let drag = runtime.handle_event(HypertileEvent::Mouse(MouseEvent::new(
+            MouseEventKind::Drag(MouseButton::Left),
+            75,
+            1,
+        )));
+        let up = runtime.handle_event(HypertileEvent::Mouse(MouseEvent::new(
+            MouseEventKind::Up(MouseButton::Left),
+            75,
+            1,
+        )));
+        render_once(&mut runtime, Rect::new(0, 0, 100, 20));
+
+        assert_eq!(down, EventOutcome::Consumed);
+        assert_eq!(drag, EventOutcome::Consumed);
+        assert_eq!(up, EventOutcome::Consumed);
+        assert_eq!(runtime.focused_pane(), Some(PaneId::ROOT));
+        assert_eq!(runtime.pane_rect(PaneId::ROOT).unwrap().x, 50);
+        assert_eq!(runtime.pane_rect(right).unwrap().x, 0);
+    }
+
+    #[test]
+    fn layout_mode_drag_preview_tracks_mouse_before_drop() {
+        let mut runtime = HypertileRuntime::new();
+        let _ = runtime
+            .split_focused(Direction::Horizontal, "block")
+            .unwrap();
+        render_once(&mut runtime, Rect::new(0, 0, 100, 20));
+
+        runtime.handle_event(HypertileEvent::Mouse(MouseEvent::new(
+            MouseEventKind::Down(MouseButton::Left),
+            1,
+            1,
+        )));
+        runtime.handle_event(HypertileEvent::Mouse(MouseEvent::new(
+            MouseEventKind::Drag(MouseButton::Left),
+            10,
+            4,
+        )));
+
+        assert_eq!(
+            runtime.mouse_drag.preview_rect(),
+            Some(Rect::new(9, 3, 50, 20))
+        );
+    }
+
+    #[test]
+    fn layout_mode_drag_without_majority_overlap_does_not_swap() {
+        let mut runtime = HypertileRuntime::new();
+        let right = runtime
+            .split_focused(Direction::Horizontal, "block")
+            .unwrap();
+        render_once(&mut runtime, Rect::new(0, 0, 100, 20));
+
+        runtime.handle_event(HypertileEvent::Mouse(MouseEvent::new(
+            MouseEventKind::Down(MouseButton::Left),
+            1,
+            1,
+        )));
+        runtime.handle_event(HypertileEvent::Mouse(MouseEvent::new(
+            MouseEventKind::Drag(MouseButton::Left),
+            20,
+            1,
+        )));
+        runtime.handle_event(HypertileEvent::Mouse(MouseEvent::new(
+            MouseEventKind::Up(MouseButton::Left),
+            20,
+            1,
+        )));
+        render_once(&mut runtime, Rect::new(0, 0, 100, 20));
+
+        assert_eq!(runtime.pane_rect(PaneId::ROOT).unwrap().x, 0);
+        assert_eq!(runtime.pane_rect(right).unwrap().x, 50);
+    }
+
+    #[test]
+    fn plugin_input_routes_mouse_to_hit_pane() {
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let mut runtime = HypertileRuntime::new();
+        runtime.register_plugin_type("record", {
+            let events = events.clone();
+            move || RecordingPlugin {
+                events: events.clone(),
+            }
+        });
+
+        runtime.replace_focused_plugin("record").unwrap();
+        let right = runtime
+            .split_focused(Direction::Horizontal, "record")
+            .unwrap();
+        runtime.focus_pane(PaneId::ROOT).unwrap();
+        runtime.set_mode(InputMode::PluginInput);
+        render_once(&mut runtime, Rect::new(0, 0, 100, 20));
+
+        let mouse = MouseEvent::new(MouseEventKind::Down(MouseButton::Left), 75, 1);
+        let outcome = runtime.handle_event(HypertileEvent::Mouse(mouse));
+
+        assert_eq!(outcome, EventOutcome::Consumed);
+        assert_eq!(runtime.focused_pane(), Some(right));
+        assert_eq!(events.borrow().as_slice(), &[mouse]);
+    }
+}

@@ -1,5 +1,5 @@
 use crate::core::{PaneId, normalize_ratio};
-use ratatui::layout::Rect;
+use ratatui::layout::{Direction, Rect};
 
 /// Split ratio policy.
 ///
@@ -36,4 +36,12 @@ pub struct PaneSnapshot {
     pub id: PaneId,
     pub rect: Rect,
     pub is_focused: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SplitSnapshot {
+    pub path: Vec<usize>,
+    pub rect: Rect,
+    pub direction: Direction,
+    pub ratio: f32,
 }

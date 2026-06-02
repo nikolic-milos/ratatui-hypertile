@@ -7,6 +7,7 @@ use std::ops::{BitOr, BitOrAssign};
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HypertileEvent {
     Key(KeyChord),
+    Mouse(MouseEvent),
     Action(HypertileAction),
     Tick,
 }
@@ -96,6 +97,58 @@ impl KeyChord {
 
     pub const fn with_modifiers(code: KeyCode, modifiers: Modifiers) -> Self {
         Self { code, modifiers }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MouseButton {
+    Left,
+    Right,
+    Middle,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MouseEventKind {
+    Down(MouseButton),
+    Up(MouseButton),
+    Drag(MouseButton),
+    Moved,
+    ScrollUp,
+    ScrollDown,
+    ScrollLeft,
+    ScrollRight,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct MouseEvent {
+    pub kind: MouseEventKind,
+    pub column: u16,
+    pub row: u16,
+    pub modifiers: Modifiers,
+}
+
+impl MouseEvent {
+    pub const fn new(kind: MouseEventKind, column: u16, row: u16) -> Self {
+        Self {
+            kind,
+            column,
+            row,
+            modifiers: Modifiers::NONE,
+        }
+    }
+
+    pub const fn with_modifiers(
+        kind: MouseEventKind,
+        column: u16,
+        row: u16,
+        modifiers: Modifiers,
+    ) -> Self {
+        Self {
+            kind,
+            column,
+            row,
+            modifiers,
+        }
     }
 }
 

@@ -28,6 +28,8 @@ cargo run --example core_only
 
 `s` `v` split &ensp; `d` close &ensp; `hjkl` focus &ensp; `HJKL` move &ensp; `[` `]` resize
 
+mouse click focus &ensp; drag split borders to resize &ensp; drag panes onto panes to swap
+
 `p` palette &ensp; `i` plugin input &ensp; `Ctrl+t` new tab &ensp; `Ctrl+w` close tab &ensp; `Ctrl+c` quit
 
 ## Quickstart
@@ -50,6 +52,10 @@ let pane = layout.split_focused(Direction::Horizontal).unwrap();
 layout.compute_layout(area);
 for pane in layout.panes_iter() {
     // pane.id, pane.rect, pane.is_focused
+}
+
+if let Some(pane_id) = layout.pane_at(column, row) {
+    layout.focus_pane(pane_id).unwrap();
 }
 ```
 

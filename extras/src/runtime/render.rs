@@ -1,4 +1,5 @@
-use crate::runtime::HypertileRuntime;
+use crate::registry::Registry;
+use crate::runtime::{BorderConfig, HypertileRuntime};
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -21,17 +22,40 @@ impl HypertileRuntime {
         let highlight = self.core.state().focus_highlight();
         let registry = &mut self.registry;
         let border_config = &self.border_config;
+        let dragged_pane = self.mouse_drag.dragged_pane();
+        let dragged_rect = self.mouse_drag.preview_rect();
         let panes = self
             .animation_state
             .display_rects(area, self.core.state().panes(), now);
 
         for &(pane_id, rect) in panes {
-            let is_focused = highlight && Some(pane_id) == focused;
-            if let Some(plugin) = registry.plugin_mut(pane_id) {
-                plugin.render(rect, buf, is_focused);
-            } else {
-                render_fallback_pane(border_config, pane_id, rect, buf, is_focused);
+            if Some(pane_id) == dragged_pane {
+                continue;
             }
+            let is_focused = highlight && Some(pane_id) == focused;
+            render_runtime_pane(
+                &mut *registry,
+                border_config,
+                pane_id,
+                rect,
+                buf,
+                is_focused,
+            );
+        }
+
+        if let (Some(pane_id), Some(rect)) =
+            (dragged_pane, dragged_rect.and_then(|r| clip_rect(r, area)))
+        {
+            Clear.render(rect, buf);
+            let is_focused = highlight && Some(pane_id) == focused;
+            render_runtime_pane(
+                &mut *registry,
+                border_config,
+                pane_id,
+                rect,
+                buf,
+                is_focused,
+            );
         }
 
         if self.palette.show {
@@ -89,8 +113,23 @@ impl HypertileRuntime {
     }
 }
 
+fn render_runtime_pane(
+    registry: &mut Registry,
+    cfg: &BorderConfig,
+    pane_id: PaneId,
+    area: Rect,
+    buf: &mut Buffer,
+    is_focused: bool,
+) {
+    if let Some(plugin) = registry.plugin_mut(pane_id) {
+        plugin.render(area, buf, is_focused);
+    } else {
+        render_fallback_pane(cfg, pane_id, area, buf, is_focused);
+    }
+}
+
 fn render_fallback_pane(
-    cfg: &crate::runtime::BorderConfig,
+    cfg: &BorderConfig,
     pane_id: PaneId,
     area: Rect,
     buf: &mut Buffer,
@@ -115,4 +154,19 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
     let x = area.x + (area.width.saturating_sub(w)) / 2;
     let y = area.y + (area.height.saturating_sub(h)) / 2;
     Rect::new(x, y, w, h)
+}
+
+fn clip_rect(rect: Rect, bounds: Rect) -> Option<Rect> {
+    let left = rect.x.max(bounds.x);
+    let top = rect.y.max(bounds.y);
+    let right = rect
+        .x
+        .saturating_add(rect.width)
+        .min(bounds.x.saturating_add(bounds.width));
+    let bottom = rect
+        .y
+        .saturating_add(rect.height)
+        .min(bounds.y.saturating_add(bounds.height));
+
+    (right > left && bottom > top).then(|| Rect::new(left, top, right - left, bottom - top))
 }

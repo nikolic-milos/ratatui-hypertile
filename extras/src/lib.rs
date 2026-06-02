@@ -24,4 +24,7 @@ pub use runtime::{
 };
 
 #[cfg(feature = "crossterm")]
-pub use runtime::{event_from_crossterm, keychord_from_crossterm};
+pub use runtime::{
+    event_from_crossterm, hypertile_event_from_crossterm, keychord_from_crossterm,
+    mouse_event_from_crossterm,
+};

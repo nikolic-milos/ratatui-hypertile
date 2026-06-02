@@ -140,4 +140,61 @@ impl HypertileState {
         self.invalidate_layout_cache();
         Ok(true)
     }
+
+    pub fn set_split_ratio(
+        &mut self,
+        split_path: &[usize],
+        ratio: f32,
+    ) -> Result<bool, StateError> {
+        let split = node_mut_at_path(&mut self.root, split_path)?;
+
+        let Node::Split { ratio: current, .. } = split else {
+            return Err(StateError::ParentNodeNotSplit);
+        };
+
+        let next = normalize_ratio(ratio);
+        if (*current - next).abs() < f32::EPSILON {
+            return Ok(false);
+        }
+
+        *current = next;
+        self.invalidate_layout_cache();
+        Ok(true)
+    }
+
+    pub fn swap_panes(&mut self, first: PaneId, second: PaneId) -> Result<bool, StateError> {
+        if first == second {
+            return Ok(false);
+        }
+
+        let first_path = self
+            .pane_path(first)
+            .ok_or(StateError::UnknownPaneId(first))?;
+        let second_path = self
+            .pane_path(second)
+            .ok_or(StateError::UnknownPaneId(second))?;
+        let focused_before = self.focused_pane();
+
+        let first_node = node_mut_at_path(&mut self.root, &first_path)?;
+        let Node::Pane(first_leaf_id) = first_node else {
+            return Err(StateError::FocusedNodeNotPane);
+        };
+        *first_leaf_id = second;
+
+        let second_node = node_mut_at_path(&mut self.root, &second_path)?;
+        let Node::Pane(second_leaf_id) = second_node else {
+            return Err(StateError::FocusedNodeNotPane);
+        };
+        *second_leaf_id = first;
+
+        self.rebuild_pane_index();
+        match focused_before {
+            Some(id) if id == first || id == second => {
+                let _ = self.focus_path_for(id);
+            }
+            _ => self.sync_focus_path(),
+        }
+        self.invalidate_layout_cache();
+        Ok(true)
+    }
 }
