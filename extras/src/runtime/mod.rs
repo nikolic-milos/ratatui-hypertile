@@ -103,7 +103,7 @@ impl HypertileRuntime {
     pub fn registry(&self) -> &Registry {
         &self.registry
     }
-    
+
     /// Mutating the registry directly can leave it out of
     /// sync with the core pane tree. Prefer runtime methods
     /// [`Self::register_plugin_type`], [`Self::split_focused`], and
