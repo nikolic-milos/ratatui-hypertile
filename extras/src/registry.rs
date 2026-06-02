@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Trait implemented by pane-local plugins stored in [`Registry`].
 pub trait HypertilePlugin {
-    fn render(&self, area: Rect, buf: &mut Buffer, is_focused: bool);
+    fn render(&mut self, area: Rect, buf: &mut Buffer, is_focused: bool);
 
     /// Return [`EventOutcome::Consumed`] to mark it handled.
     fn on_event(&mut self, _event: &HypertileEvent) -> EventOutcome {

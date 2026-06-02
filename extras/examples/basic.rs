@@ -153,7 +153,7 @@ struct MonitorPlugin {
 }
 
 impl HypertilePlugin for MonitorPlugin {
-    fn render(&self, area: Rect, buf: &mut Buffer, is_focused: bool) {
+    fn render(&mut self, area: Rect, buf: &mut Buffer, is_focused: bool) {
         let mut lines = vec![Line::from("")];
         for (i, &usage) in self.cpu.iter().enumerate() {
             let filled = usage as usize * 20 / 100;
@@ -217,7 +217,7 @@ struct LogsPlugin {
 }
 
 impl HypertilePlugin for LogsPlugin {
-    fn render(&self, area: Rect, buf: &mut Buffer, is_focused: bool) {
+    fn render(&mut self, area: Rect, buf: &mut Buffer, is_focused: bool) {
         let text: Vec<Line> = self
             .lines
             .iter()
@@ -252,7 +252,7 @@ struct EditorPlugin {
 }
 
 impl HypertilePlugin for EditorPlugin {
-    fn render(&self, area: Rect, buf: &mut Buffer, is_focused: bool) {
+    fn render(&mut self, area: Rect, buf: &mut Buffer, is_focused: bool) {
         Paragraph::new(format!("{}\u{2588}", self.text))
             .block(pane_block("Editor", is_focused, Color::Magenta))
             .wrap(Wrap { trim: false })
@@ -286,7 +286,7 @@ struct NetworkPlugin {
 }
 
 impl HypertilePlugin for NetworkPlugin {
-    fn render(&self, area: Rect, buf: &mut Buffer, is_focused: bool) {
+    fn render(&mut self, area: Rect, buf: &mut Buffer, is_focused: bool) {
         let t = self.tick;
         let conns = 800 + (t * 17 % 120) as u32;
         let rps = 1100 + (t * 31 % 400) as u32;
