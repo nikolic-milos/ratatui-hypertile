@@ -91,6 +91,10 @@ impl HypertileRuntime {
         &self.core
     }
 
+    /// Mutating the core directly can leave the runtime's plugin registry
+    /// and animation state out of sync. Prefer using runtime methods
+    /// [`Self::split_focused`], [`Self::close_focused`], and
+    /// [`Self::replace_pane_plugin`] when possible.
     pub fn core_mut(&mut self) -> &mut CoreHypertile {
         &mut self.core
     }
@@ -98,7 +102,11 @@ impl HypertileRuntime {
     pub fn registry(&self) -> &Registry {
         &self.registry
     }
-
+    
+    /// Mutating the registry directly can leave it out of
+    /// sync with the core pane tree. Prefer runtime methods
+    /// [`Self::register_plugin_type`], [`Self::split_focused`], and
+    /// [`Self::replace_pane_plugin`] when possible.
     pub fn registry_mut(&mut self) -> &mut Registry {
         &mut self.registry
     }
