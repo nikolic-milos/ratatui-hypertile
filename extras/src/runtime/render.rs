@@ -1,8 +1,8 @@
 use crate::registry::Registry;
-use crate::runtime::{BorderConfig, HypertileRuntime};
+use crate::runtime::{BorderConfig, HypertileRuntime, mouse::MouseResizeHover};
 use ratatui::{
     buffer::Buffer,
-    layout::Rect,
+    layout::{Direction, Rect},
     style::{Color, Style},
     widgets::{Block, Borders, Clear, List, ListItem, ListState, StatefulWidget, Widget},
 };
@@ -16,7 +16,11 @@ impl HypertileRuntime {
     /// you want move animations to keep updating.
     pub fn render(&mut self, area: Rect, buf: &mut Buffer) {
         let now = Instant::now();
+        let previous_area = self.animation_state.last_area();
         self.animation_state.remember_area(area);
+        if previous_area.is_some() && previous_area != Some(area) {
+            self.mouse_resize_hover = None;
+        }
         self.core.compute_layout(area);
         let focused = self.core.focused_pane();
         let highlight = self.core.state().focus_highlight();
@@ -56,6 +60,10 @@ impl HypertileRuntime {
                 buf,
                 is_focused,
             );
+        }
+
+        if let Some(hover) = self.mouse_resize_hover {
+            render_resize_hover(hover, area, border_config, buf);
         }
 
         if self.palette.show {
@@ -146,6 +154,54 @@ fn render_fallback_pane(
             .border_style(cfg.focused_border_style);
     }
     block.render(area, buf);
+}
+
+fn render_resize_hover(
+    hover: MouseResizeHover,
+    bounds: Rect,
+    cfg: &BorderConfig,
+    buf: &mut Buffer,
+) {
+    match hover.direction {
+        Direction::Horizontal => {
+            let x = split_line_position(hover.rect.x, hover.rect.width, hover.ratio);
+            let y_start = hover.rect.y.max(bounds.y);
+            let y_end = hover
+                .rect
+                .y
+                .saturating_add(hover.rect.height)
+                .min(bounds.y.saturating_add(bounds.height));
+
+            for y in y_start..y_end {
+                if let Some(cell) = buf.cell_mut((x, y)) {
+                    cell.set_symbol(cfg.focused_border_set.vertical_left)
+                        .set_style(cfg.focused_border_style);
+                }
+            }
+        }
+        Direction::Vertical => {
+            let y = split_line_position(hover.rect.y, hover.rect.height, hover.ratio);
+            let x_start = hover.rect.x.max(bounds.x);
+            let x_end = hover
+                .rect
+                .x
+                .saturating_add(hover.rect.width)
+                .min(bounds.x.saturating_add(bounds.width));
+
+            for x in x_start..x_end {
+                if let Some(cell) = buf.cell_mut((x, y)) {
+                    cell.set_symbol(cfg.focused_border_set.horizontal_top)
+                        .set_style(cfg.focused_border_style);
+                }
+            }
+        }
+    }
+}
+
+fn split_line_position(start: u16, length: u16, ratio: f32) -> u16 {
+    let offset = (f32::from(length) * ratio).round() as u16;
+    let offset = offset.min(length.saturating_sub(1));
+    start.saturating_add(offset)
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {

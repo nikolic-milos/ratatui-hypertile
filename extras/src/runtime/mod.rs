@@ -38,7 +38,7 @@ pub use workspace::{WorkspaceAction, WorkspaceRuntime};
 use animation::AnimationState;
 use constants::DEFAULT_PLUGIN_TYPE;
 use keymap::RuntimeAction;
-use mouse::MouseDragState;
+use mouse::{MouseDragState, MouseResizeHover};
 use palette::PaletteState;
 
 /// Ready-made runtime for apps that want tiling plus plugins without building
@@ -77,6 +77,7 @@ pub struct HypertileRuntime {
     animation_config: AnimationConfig,
     animation_state: AnimationState,
     mouse_drag: MouseDragState,
+    mouse_resize_hover: Option<MouseResizeHover>,
 }
 
 impl Default for HypertileRuntime {
@@ -124,6 +125,8 @@ impl HypertileRuntime {
 
     pub fn set_mode(&mut self, mode: InputMode) {
         self.mode = mode;
+        self.mouse_drag.clear();
+        self.mouse_resize_hover = None;
     }
 
     pub fn set_resize_step(&mut self, step: f32) {
@@ -221,6 +224,7 @@ impl HypertileRuntime {
         self.core.set_root(root)?;
         self.animation_state.clear();
         self.mouse_drag.clear();
+        self.mouse_resize_hover = None;
         self.sync_registry_to_core();
         Ok(())
     }
@@ -229,6 +233,7 @@ impl HypertileRuntime {
         self.core.reset();
         self.animation_state.clear();
         self.mouse_drag.clear();
+        self.mouse_resize_hover = None;
         self.sync_registry_to_core();
     }
 
@@ -244,6 +249,7 @@ impl HypertileRuntime {
             .mount_plugin_instance(pane_id, plugin_type, plugin);
         self.animation_state.clear();
         self.mouse_drag.clear();
+        self.mouse_resize_hover = None;
         Ok(pane_id)
     }
 
@@ -252,6 +258,7 @@ impl HypertileRuntime {
         self.registry.remove_plugin_if_exists(removed_id);
         self.animation_state.clear();
         self.mouse_drag.clear();
+        self.mouse_resize_hover = None;
         Ok(removed_id)
     }
 
@@ -290,6 +297,7 @@ impl HypertileRuntime {
         self.core.set_focused_ratio(ratio)?;
         self.animation_state.clear();
         self.mouse_drag.clear();
+        self.mouse_resize_hover = None;
         Ok(())
     }
 
@@ -311,7 +319,7 @@ impl HypertileRuntime {
             HypertileEvent::Key(chord) => {
                 if chord.code == KeyCode::Escape && chord.modifiers.is_empty() {
                     if self.mode == InputMode::PluginInput {
-                        self.mode = InputMode::Layout;
+                        self.set_mode(InputMode::Layout);
                         return Ok(EventOutcome::Consumed);
                     }
                     return Ok(EventOutcome::Ignored);
@@ -342,7 +350,7 @@ impl HypertileRuntime {
             Some(RuntimeAction::OpenPalette) => self.open_palette(),
             Some(RuntimeAction::InteractFocused) => self.handle_interact_focused(),
             Some(RuntimeAction::EnterPluginInput) => {
-                self.mode = InputMode::PluginInput;
+                self.set_mode(InputMode::PluginInput);
                 Ok(EventOutcome::Consumed)
             }
             None => Ok(EventOutcome::Ignored),
@@ -377,7 +385,7 @@ impl HypertileRuntime {
         match self.registry.plugin_type_for(pane_id) {
             None | Some(DEFAULT_PLUGIN_TYPE) => self.open_palette_for_target(Some(pane_id)),
             Some(_) => {
-                self.mode = InputMode::PluginInput;
+                self.set_mode(InputMode::PluginInput);
                 Ok(EventOutcome::Consumed)
             }
         }
@@ -420,6 +428,7 @@ impl HypertileRuntime {
         }
         if Self::action_changes_layout(action) {
             self.mouse_drag.clear();
+            self.mouse_resize_hover = None;
         }
 
         outcome

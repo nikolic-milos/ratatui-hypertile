@@ -28,6 +28,13 @@ pub(super) enum MouseDragState {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct MouseResizeHover {
+    pub(super) direction: Direction,
+    pub(super) rect: Rect,
+    pub(super) ratio: f32,
+}
+
 impl MouseDragState {
     pub(super) fn clear(&mut self) {
         *self = Self::None;
@@ -86,6 +93,7 @@ impl HypertileRuntime {
             MouseEventKind::Down(MouseButton::Left) => self.start_layout_mouse_drag(mouse, target),
             MouseEventKind::Drag(MouseButton::Left) => self.update_layout_mouse_drag(mouse),
             MouseEventKind::Up(MouseButton::Left) => self.finish_layout_mouse_drag(mouse),
+            MouseEventKind::Moved => self.update_layout_mouse_hover(mouse),
             _ => Ok(EventOutcome::Ignored),
         }
     }
@@ -96,6 +104,7 @@ impl HypertileRuntime {
         target: Option<PaneId>,
     ) -> Result<EventOutcome, RuntimeError> {
         self.mouse_drag.clear();
+        self.mouse_resize_hover = None;
 
         if let Some(split) = self
             .core
@@ -172,6 +181,27 @@ impl HypertileRuntime {
         Ok(EventOutcome::Consumed)
     }
 
+    fn update_layout_mouse_hover(
+        &mut self,
+        mouse: MouseEvent,
+    ) -> Result<EventOutcome, RuntimeError> {
+        let next = self
+            .core
+            .split_at(mouse.column, mouse.row, SPLIT_HIT_TOLERANCE)
+            .map(|split| MouseResizeHover {
+                direction: split.direction,
+                rect: split.rect,
+                ratio: split.ratio,
+            });
+
+        if self.mouse_resize_hover == next {
+            return Ok(EventOutcome::Ignored);
+        }
+
+        self.mouse_resize_hover = next;
+        Ok(EventOutcome::Consumed)
+    }
+
     fn finish_layout_mouse_drag(
         &mut self,
         mouse: MouseEvent,
@@ -201,7 +231,7 @@ impl HypertileRuntime {
             i32::from(mouse.column) - i32::from(start_column),
             i32::from(mouse.row) - i32::from(start_row),
         );
-        let Some(target_id) = majority_overlap_target(self, pane_id, preview) else {
+        let Some(target_id) = drop_target(self, pane_id, mouse, preview) else {
             return Ok(EventOutcome::Consumed);
         };
         if target_id == pane_id {
@@ -288,6 +318,21 @@ fn majority_overlap_target(
         })
         .max_by_key(|(_, overlap)| *overlap)
         .map(|(pane_id, _)| pane_id)
+}
+
+fn drop_target(
+    runtime: &HypertileRuntime,
+    dragged: PaneId,
+    mouse: MouseEvent,
+    preview: Rect,
+) -> Option<PaneId> {
+    if let Some(target) = runtime.core.pane_at(mouse.column, mouse.row)
+        && target != dragged
+    {
+        return Some(target);
+    }
+
+    majority_overlap_target(runtime, dragged, preview)
 }
 
 fn translate_rect(rect: Rect, dx: i32, dy: i32) -> Rect {
@@ -496,6 +541,106 @@ mod tests {
 
         assert_eq!(runtime.pane_rect(PaneId::ROOT).unwrap().x, 0);
         assert_eq!(runtime.pane_rect(right).unwrap().x, 50);
+    }
+
+    #[test]
+    fn layout_mode_mouse_move_tracks_resize_hover() {
+        let mut runtime = HypertileRuntime::new();
+        runtime
+            .split_focused(Direction::Horizontal, "block")
+            .unwrap();
+        render_once(&mut runtime, Rect::new(0, 0, 100, 20));
+
+        let hover = runtime.handle_event(HypertileEvent::Mouse(MouseEvent::new(
+            MouseEventKind::Moved,
+            50,
+            5,
+        )));
+
+        assert_eq!(hover, EventOutcome::Consumed);
+        assert_eq!(
+            runtime.mouse_resize_hover,
+            Some(MouseResizeHover {
+                direction: Direction::Horizontal,
+                rect: Rect::new(0, 0, 100, 20),
+                ratio: 0.5,
+            })
+        );
+
+        let clear = runtime.handle_event(HypertileEvent::Mouse(MouseEvent::new(
+            MouseEventKind::Moved,
+            10,
+            5,
+        )));
+
+        assert_eq!(clear, EventOutcome::Consumed);
+        assert_eq!(runtime.mouse_resize_hover, None);
+    }
+
+    #[test]
+    fn layout_mode_hovered_split_renders_resize_indicator() {
+        let mut runtime = HypertileRuntime::new();
+        runtime
+            .split_focused(Direction::Horizontal, "block")
+            .unwrap();
+        runtime.focus_pane(PaneId::ROOT).unwrap();
+
+        let area = Rect::new(0, 0, 100, 20);
+        let mut buffer = Buffer::empty(area);
+        runtime.render(area, &mut buffer);
+        assert_eq!(buffer.cell((50, 5)).unwrap().symbol(), "│");
+
+        runtime.handle_event(HypertileEvent::Mouse(MouseEvent::new(
+            MouseEventKind::Moved,
+            50,
+            5,
+        )));
+
+        let mut buffer = Buffer::empty(area);
+        runtime.render(area, &mut buffer);
+
+        assert_eq!(
+            buffer.cell((50, 5)).unwrap().symbol(),
+            runtime.border_config().focused_border_set.vertical_left
+        );
+    }
+
+    #[test]
+    fn layout_mode_large_pane_drops_on_smaller_pane_under_cursor() {
+        let mut runtime = HypertileRuntime::new();
+        let logs = runtime.split_focused(Direction::Vertical, "block").unwrap();
+        runtime.focus_pane(PaneId::ROOT).unwrap();
+        let network = runtime
+            .split_focused(Direction::Horizontal, "block")
+            .unwrap();
+        render_once(&mut runtime, Rect::new(0, 0, 100, 40));
+
+        runtime.handle_event(HypertileEvent::Mouse(MouseEvent::new(
+            MouseEventKind::Down(MouseButton::Left),
+            1,
+            25,
+        )));
+        runtime.handle_event(HypertileEvent::Mouse(MouseEvent::new(
+            MouseEventKind::Drag(MouseButton::Left),
+            10,
+            5,
+        )));
+        runtime.handle_event(HypertileEvent::Mouse(MouseEvent::new(
+            MouseEventKind::Up(MouseButton::Left),
+            10,
+            5,
+        )));
+        render_once(&mut runtime, Rect::new(0, 0, 100, 40));
+
+        assert_eq!(runtime.pane_rect(logs).unwrap(), Rect::new(0, 0, 50, 20));
+        assert_eq!(
+            runtime.pane_rect(network).unwrap(),
+            Rect::new(50, 0, 50, 20)
+        );
+        assert_eq!(
+            runtime.pane_rect(PaneId::ROOT).unwrap(),
+            Rect::new(0, 20, 100, 20)
+        );
     }
 
     #[test]
