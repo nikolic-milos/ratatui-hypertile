@@ -99,12 +99,33 @@ impl HypertileRuntime {
         &self.core
     }
 
-    /// Mutating the core directly can leave the runtime's plugin registry
-    /// and animation state out of sync. Prefer using runtime methods
-    /// [`Self::split_focused`], [`Self::close_focused`], and
-    /// [`Self::replace_pane_plugin`] when possible.
+    /// Gives mutable access to the core layout.
+    ///
+    /// Calling this clears any running animation, mouse drag, and resize
+    /// hover, because direct mutations could leave them pointing at panes
+    /// or splits that no longer exist.
+    ///
+    /// It does not sync the plugin registry. If you change the pane tree,
+    /// call [`Self::sync_registry`] afterwards, or use
+    /// [`Self::with_core_mut`] which does both steps for you. Prefer
+    /// runtime methods like [`Self::split_focused`],
+    /// [`Self::close_focused`], and [`Self::replace_pane_plugin`] when
+    /// possible.
     pub fn core_mut(&mut self) -> &mut CoreHypertile {
+        self.clear_transient_state();
         &mut self.core
+    }
+
+    /// Runs `f` with mutable access to the core layout, then syncs the
+    /// plugin registry to the pane tree.
+    ///
+    /// This is the safe way to do custom core mutations. New panes get a
+    /// placeholder plugin and removed panes drop their plugin instance.
+    pub fn with_core_mut<T>(&mut self, f: impl FnOnce(&mut CoreHypertile) -> T) -> T {
+        self.clear_transient_state();
+        let result = f(&mut self.core);
+        self.sync_registry_to_core();
+        result
     }
 
     pub fn registry(&self) -> &Registry {
@@ -114,9 +135,19 @@ impl HypertileRuntime {
     /// Mutating the registry directly can leave it out of
     /// sync with the core pane tree. Prefer runtime methods
     /// [`Self::register_plugin_type`], [`Self::split_focused`], and
-    /// [`Self::replace_pane_plugin`] when possible.
+    /// [`Self::replace_pane_plugin`] when possible. Call
+    /// [`Self::sync_registry`] to repair the mapping afterwards.
     pub fn registry_mut(&mut self) -> &mut Registry {
         &mut self.registry
+    }
+
+    /// Syncs the plugin registry to the current pane tree.
+    ///
+    /// Call this after changing the pane tree through [`Self::core_mut`].
+    /// New panes get a placeholder plugin and removed panes drop their
+    /// plugin instance.
+    pub fn sync_registry(&mut self) {
+        self.sync_registry_to_core();
     }
 
     pub fn mode(&self) -> InputMode {
@@ -222,18 +253,14 @@ impl HypertileRuntime {
     /// own. Any old animation state is dropped.
     pub fn set_root(&mut self, root: CoreNode) -> Result<(), RuntimeError> {
         self.core.set_root(root)?;
-        self.animation_state.clear();
-        self.mouse_drag.clear();
-        self.mouse_resize_hover = None;
+        self.clear_transient_state();
         self.sync_registry_to_core();
         Ok(())
     }
 
     pub fn reset(&mut self) {
         self.core.reset();
-        self.animation_state.clear();
-        self.mouse_drag.clear();
-        self.mouse_resize_hover = None;
+        self.clear_transient_state();
         self.sync_registry_to_core();
     }
 
@@ -247,18 +274,14 @@ impl HypertileRuntime {
         let pane_id = self.core.split_focused(direction)?;
         self.registry
             .mount_plugin_instance(pane_id, plugin_type, plugin);
-        self.animation_state.clear();
-        self.mouse_drag.clear();
-        self.mouse_resize_hover = None;
+        self.clear_transient_state();
         Ok(pane_id)
     }
 
     pub fn close_focused(&mut self) -> Result<PaneId, RuntimeError> {
         let removed_id = self.core.close_focused()?;
         self.registry.remove_plugin_if_exists(removed_id);
-        self.animation_state.clear();
-        self.mouse_drag.clear();
-        self.mouse_resize_hover = None;
+        self.clear_transient_state();
         Ok(removed_id)
     }
 
@@ -295,9 +318,7 @@ impl HypertileRuntime {
 
     pub fn set_focused_ratio(&mut self, ratio: f32) -> Result<(), RuntimeError> {
         self.core.set_focused_ratio(ratio)?;
-        self.animation_state.clear();
-        self.mouse_drag.clear();
-        self.mouse_resize_hover = None;
+        self.clear_transient_state();
         Ok(())
     }
 
@@ -471,6 +492,12 @@ impl HypertileRuntime {
             .start(area, self.core.state().panes(), now, self.animation_config);
     }
 
+    fn clear_transient_state(&mut self) {
+        self.animation_state.clear();
+        self.mouse_drag.clear();
+        self.mouse_resize_hover = None;
+    }
+
     fn sync_registry_to_core(&mut self) {
         let keep: HashSet<PaneId> = raw::collect_pane_ids(self.core.root())
             .into_iter()
@@ -510,5 +537,42 @@ mod tests {
             runtime.registry().plugin_type_for(PaneId::new(7)),
             Some("block")
         );
+    }
+
+    #[test]
+    fn with_core_mut_syncs_registry_after_split() {
+        let mut runtime = HypertileRuntime::new();
+
+        let pane_id = runtime
+            .with_core_mut(|core| core.split_focused(Direction::Horizontal))
+            .unwrap();
+
+        assert_eq!(runtime.registry().instance_count(), 2);
+        assert_eq!(runtime.registry().plugin_type_for(pane_id), Some("block"));
+    }
+
+    #[test]
+    fn core_mut_clears_mouse_drag_state() {
+        use ratatui::buffer::Buffer;
+        use ratatui_hypertile::{HypertileEvent, MouseButton, MouseEvent, MouseEventKind};
+
+        let mut runtime = HypertileRuntime::new();
+        runtime
+            .split_focused(Direction::Horizontal, "block")
+            .unwrap();
+        let area = ratatui::layout::Rect::new(0, 0, 100, 20);
+        let mut buffer = Buffer::empty(area);
+        runtime.render(area, &mut buffer);
+
+        runtime.handle_event(HypertileEvent::Mouse(MouseEvent::new(
+            MouseEventKind::Down(MouseButton::Left),
+            1,
+            1,
+        )));
+        assert!(matches!(runtime.mouse_drag, MouseDragState::Move { .. }));
+
+        let _ = runtime.core_mut();
+
+        assert!(matches!(runtime.mouse_drag, MouseDragState::None));
     }
 }
