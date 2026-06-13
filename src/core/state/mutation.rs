@@ -141,6 +141,10 @@ impl HypertileState {
         Ok(true)
     }
 
+    /// Sets the ratio of the split at `split_path`.
+    ///
+    /// Returns `Ok(true)` if the ratio changed, or `Ok(false)` if it was
+    /// already at that value.
     pub fn set_split_ratio(
         &mut self,
         split_path: &[usize],
@@ -162,6 +166,10 @@ impl HypertileState {
         Ok(true)
     }
 
+    /// Swaps the positions of two panes. Focus follows the pane id.
+    ///
+    /// Returns `Ok(true)` if the tree changed, or `Ok(false)` if `first`
+    /// and `second` are the same pane.
     pub fn swap_panes(&mut self, first: PaneId, second: PaneId) -> Result<bool, StateError> {
         if first == second {
             return Ok(false);

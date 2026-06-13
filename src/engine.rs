@@ -170,11 +170,17 @@ impl Hypertile {
         self.state.pane_rect(pane_id)
     }
 
+    /// Pane under the given terminal position.
+    ///
+    /// Uses cached rectangles, so it returns `None` before the first
+    /// [`compute_layout`](Self::compute_layout).
     #[must_use]
     pub fn pane_at(&self, column: u16, row: u16) -> Option<PaneId> {
         self.state.pane_at(column, row)
     }
 
+    /// Like [`pane_at`](Self::pane_at) but returns the pane's rect and focus
+    /// state too.
     #[must_use]
     pub fn pane_snapshot_at(&self, column: u16, row: u16) -> Option<PaneSnapshot> {
         let id = self.state.pane_at(column, row)?;
@@ -187,6 +193,10 @@ impl Hypertile {
         })
     }
 
+    /// Split whose border is within `tolerance` cells of the position.
+    ///
+    /// The closest border wins; on a tie the deepest split wins. Returns
+    /// `None` before the first [`compute_layout`](Self::compute_layout).
     #[must_use]
     pub fn split_at(&self, column: u16, row: u16, tolerance: u16) -> Option<SplitSnapshot> {
         self.state.split_at(column, row, tolerance)
@@ -257,10 +267,17 @@ impl Hypertile {
         self.state.set_focused_ratio(ratio).map(|_| ())
     }
 
+    /// Sets the ratio of the split at `split_path`.
+    ///
+    /// The path uses the same format as [`pane_path`](Self::pane_path). The
+    /// ratio is clamped to the valid range. Returns an error if the path
+    /// does not lead to a split node.
     pub fn set_split_ratio(&mut self, split_path: &[usize], ratio: f32) -> Result<(), StateError> {
         self.state.set_split_ratio(split_path, ratio).map(|_| ())
     }
 
+    /// Like [`set_split_ratio`](Self::set_split_ratio) but reports whether
+    /// the ratio actually changed.
     pub fn try_set_split_ratio(
         &mut self,
         split_path: &[usize],
@@ -269,10 +286,16 @@ impl Hypertile {
         self.state.set_split_ratio(split_path, ratio)
     }
 
+    /// Swaps the positions of two panes in the tree.
+    ///
+    /// Focus follows the pane id, so a focused pane stays focused in its
+    /// new position. Swapping a pane with itself does nothing.
     pub fn swap_panes(&mut self, first: PaneId, second: PaneId) -> Result<(), StateError> {
         self.state.swap_panes(first, second).map(|_| ())
     }
 
+    /// Like [`swap_panes`](Self::swap_panes) but reports whether anything
+    /// changed (`false` when `first == second`).
     pub fn try_swap_panes(&mut self, first: PaneId, second: PaneId) -> Result<bool, StateError> {
         self.state.swap_panes(first, second)
     }
@@ -378,5 +401,26 @@ mod tests {
             }),
             Err(StateError::LayoutUnavailable)
         );
+    }
+
+    #[test]
+    fn pane_snapshot_at_reports_rect_and_focus() {
+        let mut hypertile = Hypertile::new();
+        let right = hypertile.split_focused(Direction::Horizontal).unwrap();
+
+        assert_eq!(hypertile.pane_snapshot_at(75, 5), None);
+
+        hypertile.compute_layout(Rect::new(0, 0, 100, 20));
+
+        let focused = hypertile.pane_snapshot_at(75, 5).unwrap();
+        assert_eq!(focused.id, right);
+        assert_eq!(focused.rect, Rect::new(50, 0, 50, 20));
+        assert!(focused.is_focused);
+
+        let unfocused = hypertile.pane_snapshot_at(10, 5).unwrap();
+        assert_eq!(unfocused.id, PaneId::ROOT);
+        assert!(!unfocused.is_focused);
+
+        assert_eq!(hypertile.pane_snapshot_at(150, 5), None);
     }
 }

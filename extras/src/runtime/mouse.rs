@@ -8,7 +8,7 @@ use std::time::Instant;
 const SPLIT_HIT_TOLERANCE: u16 = 1;
 const MOVE_DRAG_THRESHOLD: u16 = 2;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub(super) enum MouseDragState {
     #[default]
     None,
@@ -76,21 +76,15 @@ impl HypertileRuntime {
         &mut self,
         mouse: MouseEvent,
     ) -> Result<EventOutcome, RuntimeError> {
-        let target = self.core.pane_at(mouse.column, mouse.row);
-
         match self.mode {
-            InputMode::Layout => self.handle_layout_mouse(mouse, target),
-            InputMode::PluginInput => self.handle_plugin_mouse(mouse, target),
+            InputMode::Layout => self.handle_layout_mouse(mouse),
+            InputMode::PluginInput => self.handle_plugin_mouse(mouse),
         }
     }
 
-    fn handle_layout_mouse(
-        &mut self,
-        mouse: MouseEvent,
-        target: Option<PaneId>,
-    ) -> Result<EventOutcome, RuntimeError> {
+    fn handle_layout_mouse(&mut self, mouse: MouseEvent) -> Result<EventOutcome, RuntimeError> {
         match mouse.kind {
-            MouseEventKind::Down(MouseButton::Left) => self.start_layout_mouse_drag(mouse, target),
+            MouseEventKind::Down(MouseButton::Left) => self.start_layout_mouse_drag(mouse),
             MouseEventKind::Drag(MouseButton::Left) => self.update_layout_mouse_drag(mouse),
             MouseEventKind::Up(MouseButton::Left) => self.finish_layout_mouse_drag(mouse),
             MouseEventKind::Moved => self.update_layout_mouse_hover(mouse),
@@ -98,11 +92,7 @@ impl HypertileRuntime {
         }
     }
 
-    fn start_layout_mouse_drag(
-        &mut self,
-        mouse: MouseEvent,
-        target: Option<PaneId>,
-    ) -> Result<EventOutcome, RuntimeError> {
+    fn start_layout_mouse_drag(&mut self, mouse: MouseEvent) -> Result<EventOutcome, RuntimeError> {
         self.mouse_drag.clear();
         self.mouse_resize_hover = None;
 
@@ -119,7 +109,7 @@ impl HypertileRuntime {
             return Ok(EventOutcome::Consumed);
         }
 
-        let Some(pane_id) = target else {
+        let Some(pane_id) = self.core.pane_at(mouse.column, mouse.row) else {
             return Ok(EventOutcome::Ignored);
         };
         let Some(origin) = self.core.pane_rect(pane_id) else {
@@ -144,20 +134,20 @@ impl HypertileRuntime {
         &mut self,
         mouse: MouseEvent,
     ) -> Result<EventOutcome, RuntimeError> {
-        let MouseDragState::Resize {
+        if let MouseDragState::Resize {
             split_path,
             direction,
             rect,
-        } = self.mouse_drag.clone()
-        else {
-            return self.update_move_drag(mouse);
-        };
-
-        let ratio = ratio_from_mouse(direction, rect, mouse);
-        if self.core.try_set_split_ratio(&split_path, ratio)? {
-            self.animation_state.clear();
+        } = &self.mouse_drag
+        {
+            let ratio = ratio_from_mouse(*direction, *rect, mouse);
+            if self.core.try_set_split_ratio(split_path, ratio)? {
+                self.animation_state.clear();
+            }
+            return Ok(EventOutcome::Consumed);
         }
-        Ok(EventOutcome::Consumed)
+
+        self.update_move_drag(mouse)
     }
 
     fn update_move_drag(&mut self, mouse: MouseEvent) -> Result<EventOutcome, RuntimeError> {
@@ -257,20 +247,22 @@ impl HypertileRuntime {
         Ok(EventOutcome::Consumed)
     }
 
-    fn handle_plugin_mouse(
-        &mut self,
-        mouse: MouseEvent,
-        target: Option<PaneId>,
-    ) -> Result<EventOutcome, RuntimeError> {
-        let Some(pane_id) = target else {
+    fn handle_plugin_mouse(&mut self, mouse: MouseEvent) -> Result<EventOutcome, RuntimeError> {
+        let Some(pane_id) = self.core.pane_at(mouse.column, mouse.row) else {
             return Ok(EventOutcome::Ignored);
         };
 
+        let mut focus_changed = false;
         if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
+            focus_changed = self.core.focused_pane() != Some(pane_id);
             self.core.focus_pane(pane_id)?;
         }
 
-        Ok(self.forward_to_plugin_id(pane_id, &HypertileEvent::Mouse(mouse)))
+        let outcome = self.forward_to_plugin_id(pane_id, &HypertileEvent::Mouse(mouse));
+        if focus_changed {
+            return Ok(EventOutcome::Consumed);
+        }
+        Ok(outcome)
     }
 }
 
@@ -302,7 +294,7 @@ fn majority_overlap_target(
     dragged: PaneId,
     preview: Rect,
 ) -> Option<PaneId> {
-    let dragged_area = rect_area(preview);
+    let dragged_area = preview.area();
     if dragged_area == 0 {
         return None;
     }
@@ -313,7 +305,7 @@ fn majority_overlap_target(
         .panes()
         .filter(|(pane_id, _)| *pane_id != dragged)
         .filter_map(|(pane_id, rect)| {
-            let overlap = overlap_area(preview, rect);
+            let overlap = preview.intersection(rect).area();
             (overlap.saturating_mul(2) > dragged_area).then_some((pane_id, overlap))
         })
         .max_by_key(|(_, overlap)| *overlap)
@@ -350,29 +342,6 @@ fn translate_u16(value: u16, delta: i32) -> u16 {
     } else {
         value.saturating_add(delta.min(i32::from(u16::MAX)) as u16)
     }
-}
-
-fn overlap_area(first: Rect, second: Rect) -> u32 {
-    let left = first.x.max(second.x);
-    let right = first
-        .x
-        .saturating_add(first.width)
-        .min(second.x.saturating_add(second.width));
-    let top = first.y.max(second.y);
-    let bottom = first
-        .y
-        .saturating_add(first.height)
-        .min(second.y.saturating_add(second.height));
-
-    if right <= left || bottom <= top {
-        return 0;
-    }
-
-    u32::from(right - left) * u32::from(bottom - top)
-}
-
-fn rect_area(rect: Rect) -> u32 {
-    u32::from(rect.width) * u32::from(rect.height)
 }
 
 #[cfg(test)]
@@ -606,6 +575,35 @@ mod tests {
     }
 
     #[test]
+    fn render_area_change_cancels_active_drag() {
+        let mut runtime = HypertileRuntime::new();
+        runtime
+            .split_focused(Direction::Horizontal, "block")
+            .unwrap();
+        render_once(&mut runtime, Rect::new(0, 0, 100, 20));
+
+        runtime.handle_event(HypertileEvent::Mouse(MouseEvent::new(
+            MouseEventKind::Down(MouseButton::Left),
+            50,
+            1,
+        )));
+        assert!(matches!(runtime.mouse_drag, MouseDragState::Resize { .. }));
+
+        render_once(&mut runtime, Rect::new(0, 0, 80, 20));
+        assert!(matches!(runtime.mouse_drag, MouseDragState::None));
+
+        let drag = runtime.handle_event(HypertileEvent::Mouse(MouseEvent::new(
+            MouseEventKind::Drag(MouseButton::Left),
+            20,
+            1,
+        )));
+        render_once(&mut runtime, Rect::new(0, 0, 80, 20));
+
+        assert_eq!(drag, EventOutcome::Ignored);
+        assert_eq!(runtime.pane_rect(PaneId::ROOT).unwrap().width, 40);
+    }
+
+    #[test]
     fn layout_mode_large_pane_drops_on_smaller_pane_under_cursor() {
         let mut runtime = HypertileRuntime::new();
         let logs = runtime.split_focused(Direction::Vertical, "block").unwrap();
@@ -668,5 +666,30 @@ mod tests {
         assert_eq!(outcome, EventOutcome::Consumed);
         assert_eq!(runtime.focused_pane(), Some(right));
         assert_eq!(events.borrow().as_slice(), &[mouse]);
+    }
+
+    #[test]
+    fn plugin_input_click_focus_change_consumes_even_if_plugin_ignores() {
+        let mut runtime = HypertileRuntime::new();
+        let right = runtime
+            .split_focused(Direction::Horizontal, "block")
+            .unwrap();
+        runtime.focus_pane(PaneId::ROOT).unwrap();
+        runtime.set_mode(InputMode::PluginInput);
+        render_once(&mut runtime, Rect::new(0, 0, 100, 20));
+
+        // The "block" plugin ignores events, so only the focus change can
+        // consume the click.
+        let click = MouseEvent::new(MouseEventKind::Down(MouseButton::Left), 75, 1);
+        assert_eq!(
+            runtime.handle_event(HypertileEvent::Mouse(click)),
+            EventOutcome::Consumed
+        );
+        assert_eq!(runtime.focused_pane(), Some(right));
+
+        assert_eq!(
+            runtime.handle_event(HypertileEvent::Mouse(click)),
+            EventOutcome::Ignored
+        );
     }
 }

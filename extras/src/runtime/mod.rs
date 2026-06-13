@@ -58,6 +58,11 @@ use palette::PaletteState;
 /// [`Hypertile`](ratatui_hypertile::Hypertile) directly if you want full
 /// control over input and rendering.
 ///
+/// In layout mode a left click focuses the pane under the cursor, dragging
+/// a split border resizes it, and dragging a pane onto another pane swaps
+/// them. In plugin input mode mouse events go to the plugin under the
+/// cursor.
+///
 /// ```
 /// use ratatui_hypertile_extras::HypertileRuntime;
 ///

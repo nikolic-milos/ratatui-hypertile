@@ -19,6 +19,7 @@ impl HypertileRuntime {
         let previous_area = self.animation_state.last_area();
         self.animation_state.remember_area(area);
         if previous_area.is_some() && previous_area != Some(area) {
+            self.mouse_drag.clear();
             self.mouse_resize_hover = None;
         }
         self.core.compute_layout(area);
@@ -47,9 +48,10 @@ impl HypertileRuntime {
             );
         }
 
-        if let (Some(pane_id), Some(rect)) =
-            (dragged_pane, dragged_rect.and_then(|r| clip_rect(r, area)))
-        {
+        let clipped_drag = dragged_rect
+            .map(|rect| rect.intersection(area))
+            .filter(|rect| !rect.is_empty());
+        if let (Some(pane_id), Some(rect)) = (dragged_pane, clipped_drag) {
             Clear.render(rect, buf);
             let is_focused = highlight && Some(pane_id) == focused;
             render_runtime_pane(
@@ -210,19 +212,4 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
     let x = area.x + (area.width.saturating_sub(w)) / 2;
     let y = area.y + (area.height.saturating_sub(h)) / 2;
     Rect::new(x, y, w, h)
-}
-
-fn clip_rect(rect: Rect, bounds: Rect) -> Option<Rect> {
-    let left = rect.x.max(bounds.x);
-    let top = rect.y.max(bounds.y);
-    let right = rect
-        .x
-        .saturating_add(rect.width)
-        .min(bounds.x.saturating_add(bounds.width));
-    let bottom = rect
-        .y
-        .saturating_add(rect.height)
-        .min(bounds.y.saturating_add(bounds.height));
-
-    (right > left && bottom > top).then(|| Rect::new(left, top, right - left, bottom - top))
 }

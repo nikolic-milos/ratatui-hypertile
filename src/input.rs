@@ -100,6 +100,7 @@ impl KeyChord {
     }
 }
 
+/// Mouse button.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MouseButton {
     Left,
@@ -107,6 +108,9 @@ pub enum MouseButton {
     Middle,
 }
 
+/// What the mouse did.
+///
+/// `Drag` means the mouse moved while the button was held down.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MouseEventKind {
     Down(MouseButton),
@@ -119,6 +123,18 @@ pub enum MouseEventKind {
     ScrollRight,
 }
 
+/// Backend-agnostic mouse event.
+///
+/// `column` and `row` are absolute terminal coordinates, not pane-local.
+/// Use [`Hypertile::pane_at`](crate::Hypertile::pane_at) or
+/// [`Hypertile::split_at`](crate::Hypertile::split_at) to map a position to
+/// the layout.
+///
+/// ```
+/// use ratatui_hypertile::{MouseButton, MouseEvent, MouseEventKind};
+///
+/// let click = MouseEvent::new(MouseEventKind::Down(MouseButton::Left), 10, 4);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct MouseEvent {
     pub kind: MouseEventKind,
@@ -194,7 +210,15 @@ pub enum HypertileAction {
     },
 }
 
-/// Whether an event handler consumed an event.
+/// Whether an event handler used an event.
+///
+/// `Consumed` means the handler acted on the event: it changed state, or it
+/// claimed the event during an exclusive interaction like a drag or modal.
+/// It does not promise that the next redraw looks different.
+///
+/// `Ignored` means the handler did nothing with the event, so callers can
+/// skip a redraw and pass the event to a fallback handler. Animation redraws
+/// are timed separately by the runtime's frame-timing API.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventOutcome {
     Ignored,

@@ -71,17 +71,6 @@ pub(super) fn shrink_rect(rect: Rect, gap: u16) -> Rect {
     }
 }
 
-pub(super) fn rect_contains(rect: Rect, column: u16, row: u16) -> bool {
-    let right = rect.x.saturating_add(rect.width);
-    let bottom = rect.y.saturating_add(rect.height);
-    rect.width > 0
-        && rect.height > 0
-        && column >= rect.x
-        && column < right
-        && row >= rect.y
-        && row < bottom
-}
-
 pub(super) fn compute_recursive(
     node: &Node,
     area: Rect,

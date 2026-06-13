@@ -38,6 +38,11 @@ pub struct PaneSnapshot {
     pub is_focused: bool,
 }
 
+/// Split node hit by [`Hypertile::split_at`](crate::Hypertile::split_at).
+///
+/// `path` points to the split node: `0` means first child, `1` means second.
+/// `rect` is the area of the whole split node, not just the border line, and
+/// `ratio` is the share of that area the first child gets.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SplitSnapshot {
     pub path: Vec<usize>,
