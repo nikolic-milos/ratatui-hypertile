@@ -3,7 +3,7 @@
 //! Keys: `s`/`v` split, `d` close, `r` reset, `hjkl`/arrows focus,
 //! `HJKL` move, `[]` resize, `Tab` cycle, `q` quit.
 
-use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::{
     buffer::Buffer,
     layout::Direction,
@@ -47,6 +47,9 @@ fn main() -> io::Result<()> {
         let Event::Key(key) = event::read()? else {
             continue;
         };
+        if key.kind != KeyEventKind::Press {
+            continue;
+        }
 
         let none = key.modifiers == KeyModifiers::NONE;
         let shift = key.modifiers == KeyModifiers::SHIFT;

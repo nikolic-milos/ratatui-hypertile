@@ -3,7 +3,11 @@ use ratatui_hypertile::{
 };
 
 pub fn keychord_from_crossterm(key: crossterm::event::KeyEvent) -> Option<KeyChord> {
-    use crossterm::event::KeyCode as CrosstermCode;
+    use crossterm::event::{KeyCode as CrosstermCode, KeyEventKind};
+
+    if key.kind != KeyEventKind::Press {
+        return None;
+    }
 
     let code = match key.code {
         CrosstermCode::Char(c) => KeyCode::Char(c),
@@ -100,9 +104,29 @@ fn mouse_button_from_crossterm(button: crossterm::event::MouseButton) -> MouseBu
 mod tests {
     use super::*;
     use crossterm::event::{
-        Event as CrosstermEvent, KeyModifiers, MouseButton as CrosstermMouseButton,
+        Event as CrosstermEvent, KeyCode as CrosstermKeyCode, KeyEvent as CrosstermKeyEvent,
+        KeyEventKind, KeyModifiers, MouseButton as CrosstermMouseButton,
         MouseEvent as CrosstermMouseEvent, MouseEventKind as CrosstermMouseEventKind,
     };
+
+    #[test]
+    fn key_adapter_ignores_non_press_events() {
+        let press = CrosstermKeyEvent::new(CrosstermKeyCode::Char('s'), KeyModifiers::NONE);
+        let release = CrosstermKeyEvent::new_with_kind(
+            CrosstermKeyCode::Char('s'),
+            KeyModifiers::NONE,
+            KeyEventKind::Release,
+        );
+
+        assert_eq!(
+            keychord_from_crossterm(press),
+            Some(KeyChord {
+                code: KeyCode::Char('s'),
+                modifiers: Modifiers::NONE,
+            })
+        );
+        assert_eq!(keychord_from_crossterm(release), None);
+    }
 
     #[test]
     fn mouse_adapter_maps_kind_coordinates_and_modifiers() {

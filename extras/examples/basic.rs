@@ -5,7 +5,9 @@
 //! `Ctrl+t/w` tabs, `Ctrl+c` quit.
 
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+    },
     execute,
 };
 use ratatui::{
@@ -114,7 +116,9 @@ fn run(
         if event::poll(timeout)? {
             match event::read()? {
                 Event::Key(key)
-                    if key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL =>
+                    if key.kind == KeyEventKind::Press
+                        && key.code == KeyCode::Char('c')
+                        && key.modifiers == KeyModifiers::CONTROL =>
                 {
                     return Ok(());
                 }
