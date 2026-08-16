@@ -19,7 +19,7 @@ mod runtime;
 pub use registry::{HypertilePlugin, PluginContext, Registry, RegistryError};
 pub use runtime::{
     AnimationConfig, BorderConfig, HypertileRuntime, HypertileRuntimeBuilder, HypertileView,
-    InputMode, ModeIndicator, MoveBindings, RuntimeError, SplitBehavior, TabBar, TabBarItem,
+    InputMode, ModeIndicator, MoveBindings, RuntimeError, SplitBehavior, TabBar, TabBarItem, TabId,
     WorkspaceAction, WorkspaceRuntime,
 };
 
