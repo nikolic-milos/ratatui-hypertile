@@ -5,7 +5,7 @@ use std::time::Duration;
 use super::HypertileRuntime;
 
 /// Uniquely identifies a tab
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub struct TabId(usize);
 
 impl TabId {
@@ -107,6 +107,18 @@ impl WorkspaceRuntime {
     /// Returns the active tab id
     pub fn active_tab_id(&self) -> TabId {
         self.tabs[self.active].tab_id
+    }
+
+    /// Returns an iterator over the identifiers of all currently open tabs
+    pub fn open_tab_ids(&self) -> impl Iterator<Item = TabId> {
+        self.tabs.iter().map(|t| t.tab_id)
+    }
+
+    /// Returns `true` if the given tab id is open
+    ///
+    /// To check if it's the active tab, use [`WorkspaceRuntime::active_tab_id`]
+    pub fn is_tab_open(&self, tab_id: TabId) -> bool {
+        self.tabs.iter().any(|t| t.tab_id == tab_id)
     }
 
     pub fn tab_labels(&self) -> impl Iterator<Item = (&str, bool)> {
