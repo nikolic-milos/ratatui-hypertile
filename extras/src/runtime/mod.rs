@@ -33,7 +33,7 @@ pub use keymap::MoveBindings;
 pub use tab_bar::{TabBar, TabBarItem};
 pub use types::{AnimationConfig, BorderConfig, InputMode, RuntimeError, SplitBehavior};
 pub use widget::{HypertileView, ModeIndicator};
-pub use workspace::{WorkspaceAction, WorkspaceRuntime};
+pub use workspace::{TabId, WorkspaceAction, WorkspaceRuntime};
 
 use animation::AnimationState;
 use constants::DEFAULT_PLUGIN_TYPE;

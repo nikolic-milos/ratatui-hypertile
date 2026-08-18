@@ -4,8 +4,24 @@ use std::time::Duration;
 
 use super::HypertileRuntime;
 
+/// Uniquely identifies a tab
+#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash)]
+pub struct TabId(usize);
+
+impl TabId {
+    /// Extracts the underlying primitive value from the identifier
+    pub const fn get(&self) -> usize {
+        self.0
+    }
+}
+
+/// Represents a tab in the application.
 struct Tab {
+    /// Unique identifier.
+    tab_id: TabId,
+    /// Display text shown in the tab header.
     label: String,
+    /// Execution environment for the tab's content.
     runtime: HypertileRuntime,
 }
 
@@ -15,8 +31,14 @@ struct Tab {
 /// workspace model without building it yourself. It intercepts a few `Ctrl+...`
 /// keys for tab management and forwards everything else to the active tab.
 pub struct WorkspaceRuntime {
+    /// Manages the collection of open tabs in the workspace.
     tabs: Vec<Tab>,
+    /// Index of the currently focused tab.
     active: usize,
+    /// Monotonically increasing source of unique identifiers for tabs. Never
+    /// decrements, even when tabs are closed.
+    next_tab_id: usize,
+    /// Produces new tab runtimes on demand.
     factory: Box<dyn Fn() -> HypertileRuntime>,
 }
 
@@ -43,13 +65,20 @@ impl WorkspaceRuntime {
     /// The factory is reused for every new tab, so it should return a fully
     /// configured runtime with your plugin registrations already in place.
     pub fn new(factory: impl Fn() -> HypertileRuntime + 'static) -> Self {
+        /// Default initial tab when the application starts
+        const FIRST_TAB: TabId = TabId(0);
+        /// Starting index for dynamically created tabs after the default tab
+        const FIRST_NEXT_ID: usize = FIRST_TAB.0 + 1;
+
         let first = factory();
         Self {
             tabs: vec![Tab {
                 label: "1".to_string(),
                 runtime: first,
+                tab_id: FIRST_TAB,
             }],
             active: 0,
+            next_tab_id: FIRST_NEXT_ID,
             factory: Box::new(factory),
         }
     }
@@ -75,6 +104,23 @@ impl WorkspaceRuntime {
         self.active
     }
 
+    /// Returns the active tab id
+    pub fn active_tab_id(&self) -> TabId {
+        self.tabs[self.active].tab_id
+    }
+
+    /// Returns an iterator over the identifiers of all currently open tabs
+    pub fn open_tab_ids(&self) -> impl Iterator<Item = TabId> {
+        self.tabs.iter().map(|t| t.tab_id)
+    }
+
+    /// Returns `true` if the given tab id is open
+    ///
+    /// To check if it's the active tab, use [`WorkspaceRuntime::active_tab_id`]
+    pub fn is_tab_open(&self, tab_id: TabId) -> bool {
+        self.tabs.iter().any(|t| t.tab_id == tab_id)
+    }
+
     pub fn tab_labels(&self) -> impl Iterator<Item = (&str, bool)> {
         self.tabs
             .iter()
@@ -86,7 +132,12 @@ impl WorkspaceRuntime {
     pub fn new_tab(&mut self) {
         let label = (self.tabs.len() + 1).to_string();
         let runtime = (self.factory)();
-        self.tabs.push(Tab { label, runtime });
+        self.tabs.push(Tab {
+            label,
+            runtime,
+            tab_id: TabId(self.next_tab_id),
+        });
+        self.next_tab_id += 1;
         self.active = self.tabs.len() - 1;
     }
 
