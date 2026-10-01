@@ -107,9 +107,10 @@ impl HypertileRuntime {
 
     /// Gives mutable access to the core layout.
     ///
-    /// Calling this clears any running animation, mouse drag, and resize
-    /// hover, because direct mutations could leave them pointing at panes
-    /// or splits that no longer exist.
+    /// Calling this closes the palette and clears any unclaimed palette
+    /// selection, running animation, mouse drag, and resize hover, because
+    /// direct mutations could leave them pointing at panes or splits that no
+    /// longer exist.
     ///
     /// It does not sync the plugin registry. If you change the pane tree,
     /// call [`Self::sync_registry`] afterwards, or use
@@ -118,6 +119,7 @@ impl HypertileRuntime {
     /// [`Self::close_focused`], and [`Self::replace_pane_plugin`] when
     /// possible.
     pub fn core_mut(&mut self) -> &mut CoreHypertile {
+        self.discard_palette();
         self.clear_transient_state();
         &mut self.core
     }
@@ -128,6 +130,7 @@ impl HypertileRuntime {
     /// This is the safe way to do custom core mutations. New panes get a
     /// placeholder plugin and removed panes drop their plugin instance.
     pub fn with_core_mut<T>(&mut self, f: impl FnOnce(&mut CoreHypertile) -> T) -> T {
+        self.discard_palette();
         self.clear_transient_state();
         let result = f(&mut self.core);
         self.sync_registry_to_core();

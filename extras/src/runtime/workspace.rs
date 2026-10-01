@@ -265,9 +265,14 @@ mod tests {
         );
         assert_eq!(runtime.take_palette_selection(), None);
 
+        assert!(runtime.open_palette());
         workspace.prev_tab();
+        assert!(!workspace.active_runtime().is_palette_open());
         let selection = workspace.active_runtime_mut().take_palette_selection();
         assert_eq!(selection.map(|s| s.plugin_type).as_deref(), Some("cpu"));
+
+        workspace.next_tab();
+        assert!(workspace.active_runtime().is_palette_open());
     }
 
     #[test]

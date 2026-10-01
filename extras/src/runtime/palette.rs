@@ -101,9 +101,10 @@ pub struct PaletteSelection {
     /// The pane the palette was opened for, if any.
     ///
     /// This is set when a [`SplitBehavior::PromptPalette`](crate::SplitBehavior::PromptPalette)
-    /// split or interacting with a placeholder opened the palette. That pane
-    /// still holds the placeholder, and it is up to you to fill, close, or
-    /// keep it.
+    /// split or interacting with a placeholder opened the palette. The pane
+    /// held the placeholder at that point and it is up to you to fill, close,
+    /// or keep it. Check that it still exists first if your app changes the
+    /// layout in between.
     pub target_pane: Option<PaneId>,
 }
 
@@ -196,8 +197,10 @@ impl HypertileRuntime {
 
     /// Returns whether the palette is showing.
     ///
-    /// While it is, the runtime consumes key and mouse input, so pass events
-    /// to it before your own shortcuts.
+    /// While it is, key and mouse input belong to the palette, so pass events
+    /// to the runtime before your own shortcuts. Use
+    /// [`try_handle_event`](Self::try_handle_event) to tell a failed
+    /// confirmation apart from ignored input.
     pub fn is_palette_open(&self) -> bool {
         self.palette.show
     }
@@ -219,8 +222,8 @@ impl HypertileRuntime {
     /// mode.
     ///
     /// Each choice is returned once. Opening the palette again, changing its
-    /// config, [`reset`](Self::reset), and [`set_root`](Self::set_root) drop a
-    /// choice that was not taken.
+    /// config, [`reset`](Self::reset), [`set_root`](Self::set_root), and
+    /// mutable core access drop a choice that was not taken.
     pub fn take_palette_selection(&mut self) -> Option<PaletteSelection> {
         self.palette.selection.take()
     }
@@ -686,5 +689,49 @@ mod tests {
         let runtime = runtime_with(PaletteConfig::default());
 
         assert_eq!(rendered_text(&runtime).trim(), "");
+    }
+    #[test]
+    fn close_palette_keeps_confirmed_selection() {
+        let mut runtime = runtime_with(emit_selection());
+
+        runtime.open_palette();
+        runtime.handle_event(key(KeyCode::Enter));
+        runtime.close_palette();
+
+        assert!(runtime.take_palette_selection().is_some());
+    }
+
+    #[test]
+    fn set_root_discards_palette_state() {
+        let mut runtime = runtime_with(emit_selection());
+        let root = runtime.core().root().clone();
+
+        runtime.open_palette();
+        runtime.handle_event(key(KeyCode::Enter));
+        runtime.set_root(root.clone()).unwrap();
+        assert_eq!(runtime.take_palette_selection(), None);
+
+        runtime.open_palette();
+        runtime.set_root(root).unwrap();
+        assert!(!runtime.is_palette_open());
+    }
+
+    #[test]
+    fn core_reset_through_with_core_mut_discards_stale_target() {
+        let mut runtime = runtime_with(emit_selection());
+
+        runtime.handle_event(key(KeyCode::Char('s')));
+        let target = runtime
+            .palette
+            .target_pane
+            .expect("split should target new pane");
+        runtime.handle_event(key(KeyCode::Enter));
+        runtime.with_core_mut(|core| core.reset());
+        let reused = runtime
+            .split_focused(Direction::Horizontal, DEFAULT_PLUGIN_TYPE)
+            .unwrap();
+
+        assert_eq!(reused, target, "reset should reuse the pane id");
+        assert_eq!(runtime.take_palette_selection(), None);
     }
 }
