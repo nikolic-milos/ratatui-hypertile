@@ -43,39 +43,6 @@ for pane in layout.panes_iter() {
 }
 ```
 
-## Application-owned palette choices
-
-The extras runtime normally offers every registered plugin except its built-in
-placeholder, then splits or replaces a pane when you confirm. Applications with
-singleton panes or hidden plugin types can opt into a curated palette:
-
-```rust
-use ratatui_hypertile_extras::{HypertileRuntime, PaletteBehavior, PaletteConfig};
-
-let mut runtime = HypertileRuntime::builder()
-    .with_palette_config(PaletteConfig {
-        allowed_plugins: Some(vec!["logs".into(), "inspector".into()]),
-        behavior: PaletteBehavior::EmitSelection,
-    })
-    .build();
-```
-
-After registering those plugins, call `open_palette()`. While `is_palette_open()`
-is true, route input through the runtime before your application's shortcuts.
-After handling input, `take_palette_selection()` returns the confirmed plugin
-name once, letting your app focus an existing pane or create one itself. No pane
-is created by `open_palette()` or by confirming in `EmitSelection` mode.
-
-Split shortcuts using `PromptPalette` still create a placeholder first; the
-selection's `target_pane` identifies it. Your app decides what to do with that
-pane. `close_palette()` and Escape dismiss the palette without removing it.
-Reopening the palette or calling `set_palette_config()` clears any unclaimed
-selection. An empty allowlist disables the palette, and unknown names are ignored.
-
-`render()` includes the palette. If your app draws content outside the plugin
-registry afterward, call `render_palette(area, buffer)` last to keep the palette
-on top. It does nothing while closed.
-
 ## FAQ
 
 **Why not just use tmux or Zellij?**

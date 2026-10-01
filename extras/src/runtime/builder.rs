@@ -105,6 +105,7 @@ impl HypertileRuntimeBuilder {
         self
     }
 
+    /// Sets which plugins the palette offers and what confirming one does.
     pub fn with_palette_config(mut self, config: PaletteConfig) -> Self {
         self.palette_config = config;
         self

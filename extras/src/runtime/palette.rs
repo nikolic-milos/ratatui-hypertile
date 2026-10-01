@@ -6,14 +6,47 @@ use crate::runtime::{HypertileRuntime, RuntimeError};
 use ratatui::layout::Direction;
 use ratatui_hypertile::{EventOutcome, HypertileEvent, KeyChord, KeyCode, PaneId};
 
+/// What confirming a palette choice does.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum PaletteBehavior {
+    /// Mount the chosen plugin, in the pane the palette was opened for if
+    /// there is one, otherwise in a new split next to the focused pane.
     #[default]
     Apply,
+    /// Leave the layout alone and keep the choice for
+    /// [`HypertileRuntime::take_palette_selection`].
     EmitSelection,
 }
 
+/// Chooses which plugins the palette offers and what confirming one does.
+///
+/// By default the palette lists every registered plugin type except the
+/// built-in placeholder, and confirming a choice mounts it. Apps with
+/// singleton panes or internal plugin types can narrow the list and handle
+/// the choice themselves:
+///
+/// ```
+/// use ratatui_hypertile_extras::{HypertileRuntime, PaletteBehavior, PaletteConfig};
+///
+/// let mut runtime = HypertileRuntime::builder()
+///     .with_palette_config(
+///         PaletteConfig::default()
+///             .with_allowed_plugin_types(["logs", "inspector"])
+///             .with_behavior(PaletteBehavior::EmitSelection),
+///     )
+///     .build();
+///
+/// // After passing input to the runtime:
+/// if let Some(selection) = runtime.take_palette_selection() {
+///     // Focus an existing pane, or create one yourself.
+///     println!("picked {}", selection.plugin_type);
+/// }
+/// ```
+///
+/// In a [`WorkspaceRuntime`](crate::WorkspaceRuntime) every tab has its own
+/// runtime, so set this in the tab factory. Open state and pending
+/// selections stay with the tab they happened in.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PaletteConfig {
     allowed_plugin_types: Option<Vec<String>>,
@@ -21,6 +54,11 @@ pub struct PaletteConfig {
 }
 
 impl PaletteConfig {
+    /// Limits the palette to these plugin types.
+    ///
+    /// Names that are not registered are ignored, and the palette lists the
+    /// rest sorted, not in the order given. An empty list disables the
+    /// palette.
     pub fn with_allowed_plugin_types<I, S>(mut self, plugin_types: I) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -30,15 +68,19 @@ impl PaletteConfig {
         self
     }
 
+    /// Sets what confirming a choice does.
     pub fn with_behavior(mut self, behavior: PaletteBehavior) -> Self {
         self.behavior = behavior;
         self
     }
 
+    /// Returns the allowlist, or `None` when every registered plugin type is
+    /// offered.
     pub fn allowed_plugin_types(&self) -> Option<&[String]> {
         self.allowed_plugin_types.as_deref()
     }
 
+    /// Returns what confirming a choice does.
     pub fn behavior(&self) -> PaletteBehavior {
         self.behavior
     }
@@ -50,10 +92,18 @@ impl PaletteConfig {
     }
 }
 
+/// A choice confirmed in [`PaletteBehavior::EmitSelection`] mode.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub struct PaletteSelection {
+    /// The chosen plugin type.
     pub plugin_type: String,
+    /// The pane the palette was opened for, if any.
+    ///
+    /// This is set when a [`SplitBehavior::PromptPalette`](crate::SplitBehavior::PromptPalette)
+    /// split or interacting with a placeholder opened the palette. That pane
+    /// still holds the placeholder, and it is up to you to fill, close, or
+    /// keep it.
     pub target_pane: Option<PaneId>,
 }
 
@@ -122,23 +172,40 @@ impl PaletteState {
 }
 
 impl HypertileRuntime {
+    /// Returns the current palette configuration.
     pub fn palette_config(&self) -> &PaletteConfig {
         &self.palette.config
     }
 
+    /// Replaces the palette configuration.
+    ///
+    /// This closes the palette and drops any unclaimed selection.
     pub fn set_palette_config(&mut self, config: PaletteConfig) {
         self.discard_palette();
         self.palette.config = config;
     }
 
+    /// Opens the palette without a target pane.
+    ///
+    /// Returns `false` and leaves the palette closed when there is nothing
+    /// to offer. In [`PaletteBehavior::Apply`] mode a confirmed choice goes
+    /// into a new split next to the focused pane.
     pub fn open_palette(&mut self) -> bool {
         self.open_palette_for_target(None)
     }
 
+    /// Returns whether the palette is showing.
+    ///
+    /// While it is, the runtime consumes key and mouse input, so pass events
+    /// to it before your own shortcuts.
     pub fn is_palette_open(&self) -> bool {
         self.palette.show
     }
 
+    /// Closes the palette without choosing anything.
+    ///
+    /// A placeholder pane created for it stays in place, and a choice that
+    /// was already confirmed is kept.
     pub fn close_palette(&mut self) {
         self.palette.show = false;
         self.palette.target_pane = None;
@@ -148,6 +215,12 @@ impl HypertileRuntime {
         self.palette.invalidate_cache();
     }
 
+    /// Takes the last choice confirmed in [`PaletteBehavior::EmitSelection`]
+    /// mode.
+    ///
+    /// Each choice is returned once. Opening the palette again, changing its
+    /// config, [`reset`](Self::reset), and [`set_root`](Self::set_root) drop a
+    /// choice that was not taken.
     pub fn take_palette_selection(&mut self) -> Option<PaletteSelection> {
         self.palette.selection.take()
     }

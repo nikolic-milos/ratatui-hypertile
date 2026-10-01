@@ -71,6 +71,10 @@ impl HypertileRuntime {
         self.render_palette(area, buf);
     }
 
+    /// Draws the palette over `buf` while it is open.
+    ///
+    /// [`render`](Self::render) already does this. Call it yourself only when
+    /// you draw over the runtime afterwards and want the palette on top.
     pub fn render_palette(&self, area: Rect, buf: &mut Buffer) {
         if !self.palette.show || area.is_empty() {
             return;
