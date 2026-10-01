@@ -14,7 +14,7 @@ documentation = "https://docs.rs/ratatui-hypertile"
 readme = "README.md"
 keywords = ["tiling", "layout", "ratatui", "tui", "panes"]
 categories = ["command-line-interface"]
-exclude = ["assets/", ".github/"]
+exclude = ["assets/", ".github/", ".rules", "AGENTS.md", "AI_POLICY.md"]
 
 [dependencies]
 ratatui = { version = "0.30", default-features = false }
