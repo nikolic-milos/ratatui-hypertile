@@ -17,7 +17,7 @@ categories = ["command-line-interface"]
 exclude = ["assets/", ".github/"]
 
 [dependencies]
-ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
+ratatui = { version = "0.30", default-features = false }
 serde = { version = "1.0", features = ["derive"], optional = true }
 
 [features]
@@ -25,4 +25,8 @@ default = []
 serde = ["dep:serde"]
 
 [dev-dependencies]
+# The `core_only` example drives a real terminal; the library itself does
+# not, and stays free of crossterm so it builds for targets without it
+# (wasm32-wasip2 among them).
 crossterm = "0.29"
+ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
