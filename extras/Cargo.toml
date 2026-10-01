@@ -22,6 +22,9 @@ default = ["crossterm"]
 crossterm = ["dep:crossterm"]
 serde = ["dep:serde", "dep:serde_json", "ratatui-hypertile/serde"]
 
+[dev-dependencies]
+ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
+
 [[example]]
 name = "basic"
 required-features = ["crossterm"]
