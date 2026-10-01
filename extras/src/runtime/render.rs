@@ -68,16 +68,18 @@ impl HypertileRuntime {
             render_resize_hover(hover, area, border_config, buf);
         }
 
-        if self.palette.show {
-            self.render_palette(area, buf);
-        }
+        self.render_palette(area, buf);
     }
 
-    pub(super) fn render_palette(&mut self, area: Rect, buf: &mut Buffer) {
-        let filtered = self.filtered_palette_items();
-        if filtered.is_empty() {
+    /// Draws the palette over `buf` while it is open.
+    ///
+    /// [`render`](Self::render) already does this. Call it yourself only when
+    /// you draw over the runtime afterwards and want the palette on top.
+    pub fn render_palette(&self, area: Rect, buf: &mut Buffer) {
+        if !self.palette.show || area.is_empty() {
             return;
         }
+        let filtered = self.filtered_palette_items();
 
         let popup = centered_rect(
             self.palette.width_percent,
@@ -90,7 +92,8 @@ impl HypertileRuntime {
         let start = self
             .palette
             .selected
-            .saturating_sub(max_visible.saturating_sub(1));
+            .saturating_sub(max_visible.saturating_sub(1))
+            .min(filtered.len());
         let end = (start + max_visible).min(filtered.len());
         let visible = &filtered[start..end];
         let selected = self.palette.selected.saturating_sub(start);
@@ -107,10 +110,14 @@ impl HypertileRuntime {
         let inner = block.inner(popup);
         block.render(popup, buf);
 
-        let items = visible
-            .iter()
-            .map(|name| ListItem::new(format!("  {name}  ")))
-            .collect::<Vec<_>>();
+        let items = if filtered.is_empty() {
+            vec![ListItem::new("  No matching plugins")]
+        } else {
+            visible
+                .iter()
+                .map(|name| ListItem::new(format!("  {name}  ")))
+                .collect::<Vec<_>>()
+        };
         let list = List::new(items).highlight_style(
             Style::default()
                 .fg(Color::Rgb(30, 30, 46))
@@ -118,7 +125,7 @@ impl HypertileRuntime {
                 .bold(),
         );
         let mut state = ListState::default();
-        state.select(Some(selected));
+        state.select((!filtered.is_empty()).then_some(selected));
         StatefulWidget::render(list, inner, buf, &mut state);
     }
 }

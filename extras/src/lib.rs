@@ -19,8 +19,8 @@ mod runtime;
 pub use registry::{HypertilePlugin, PluginContext, Registry, RegistryError};
 pub use runtime::{
     AnimationConfig, BorderConfig, HypertileRuntime, HypertileRuntimeBuilder, HypertileView,
-    InputMode, ModeIndicator, MoveBindings, RuntimeError, SplitBehavior, TabBar, TabBarItem, TabId,
-    WorkspaceAction, WorkspaceRuntime,
+    InputMode, ModeIndicator, MoveBindings, PaletteBehavior, PaletteConfig, PaletteSelection,
+    RuntimeError, SplitBehavior, TabBar, TabBarItem, TabId, WorkspaceAction, WorkspaceRuntime,
 };
 
 #[cfg(feature = "crossterm")]

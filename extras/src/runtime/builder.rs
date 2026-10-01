@@ -6,7 +6,8 @@ use crate::runtime::constants::{
 use crate::runtime::default_plugin::DefaultBlockPlugin;
 use crate::runtime::palette::PaletteState;
 use crate::runtime::{
-    AnimationConfig, BorderConfig, HypertileRuntime, InputMode, MoveBindings, SplitBehavior,
+    AnimationConfig, BorderConfig, HypertileRuntime, InputMode, MoveBindings, PaletteConfig,
+    SplitBehavior,
 };
 use ratatui_hypertile::{HypertileBuilder as CoreBuilder, MoveScope, PaneId, SplitPolicy};
 use std::sync::Arc;
@@ -35,6 +36,7 @@ pub struct HypertileRuntimeBuilder {
     pub(super) palette_width_percent: u16,
     pub(super) palette_height_percent: u16,
     pub(super) palette_max_items: usize,
+    pub(super) palette_config: PaletteConfig,
     pub(super) default_move_scope: MoveScope,
     pub(super) move_bindings: MoveBindings,
     pub(super) split_behavior: SplitBehavior,
@@ -50,6 +52,7 @@ impl Default for HypertileRuntimeBuilder {
             palette_width_percent: DEFAULT_PALETTE_WIDTH_PERCENT,
             palette_height_percent: DEFAULT_PALETTE_HEIGHT_PERCENT,
             palette_max_items: DEFAULT_PALETTE_MAX_ITEMS,
+            palette_config: PaletteConfig::default(),
             default_move_scope: MoveScope::Window,
             move_bindings: MoveBindings::VimAndShiftArrows,
             split_behavior: SplitBehavior::Placeholder,
@@ -99,6 +102,12 @@ impl HypertileRuntimeBuilder {
     /// Limits how many palette rows are visible before scrolling.
     pub fn with_palette_max_items(mut self, max_items: usize) -> Self {
         self.palette_max_items = max_items.max(1);
+        self
+    }
+
+    /// Sets which plugins the palette offers and what confirming one does.
+    pub fn with_palette_config(mut self, config: PaletteConfig) -> Self {
+        self.palette_config = config;
         self
     }
 
@@ -157,6 +166,7 @@ impl HypertileRuntimeBuilder {
                 self.palette_width_percent,
                 self.palette_height_percent,
                 self.palette_max_items,
+                self.palette_config,
             ),
             default_split_plugin_type: self.default_split_plugin_type,
             default_move_scope: self.default_move_scope,

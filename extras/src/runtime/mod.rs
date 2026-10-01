@@ -30,6 +30,7 @@ pub use crossterm::{
     mouse_event_from_crossterm,
 };
 pub use keymap::MoveBindings;
+pub use palette::{PaletteBehavior, PaletteConfig, PaletteSelection};
 pub use tab_bar::{TabBar, TabBarItem};
 pub use types::{AnimationConfig, BorderConfig, InputMode, RuntimeError, SplitBehavior};
 pub use widget::{HypertileView, ModeIndicator};
@@ -106,9 +107,10 @@ impl HypertileRuntime {
 
     /// Gives mutable access to the core layout.
     ///
-    /// Calling this clears any running animation, mouse drag, and resize
-    /// hover, because direct mutations could leave them pointing at panes
-    /// or splits that no longer exist.
+    /// Calling this closes the palette and clears any unclaimed palette
+    /// selection, running animation, mouse drag, and resize hover, because
+    /// direct mutations could leave them pointing at panes or splits that no
+    /// longer exist.
     ///
     /// It does not sync the plugin registry. If you change the pane tree,
     /// call [`Self::sync_registry`] afterwards, or use
@@ -117,6 +119,7 @@ impl HypertileRuntime {
     /// [`Self::close_focused`], and [`Self::replace_pane_plugin`] when
     /// possible.
     pub fn core_mut(&mut self) -> &mut CoreHypertile {
+        self.discard_palette();
         self.clear_transient_state();
         &mut self.core
     }
@@ -127,6 +130,7 @@ impl HypertileRuntime {
     /// This is the safe way to do custom core mutations. New panes get a
     /// placeholder plugin and removed panes drop their plugin instance.
     pub fn with_core_mut<T>(&mut self, f: impl FnOnce(&mut CoreHypertile) -> T) -> T {
+        self.discard_palette();
         self.clear_transient_state();
         let result = f(&mut self.core);
         self.sync_registry_to_core();
@@ -258,6 +262,7 @@ impl HypertileRuntime {
     /// own. Any old animation state is dropped.
     pub fn set_root(&mut self, root: CoreNode) -> Result<(), RuntimeError> {
         self.core.set_root(root)?;
+        self.discard_palette();
         self.clear_transient_state();
         self.sync_registry_to_core();
         Ok(())
@@ -265,6 +270,7 @@ impl HypertileRuntime {
 
     pub fn reset(&mut self) {
         self.core.reset();
+        self.discard_palette();
         self.clear_transient_state();
         self.sync_registry_to_core();
     }
@@ -373,7 +379,7 @@ impl HypertileRuntime {
         match self.default_layout_action(chord) {
             Some(RuntimeAction::Core(action)) => Ok(self.apply_core_action(action)),
             Some(RuntimeAction::SplitDefault(direction)) => self.handle_split_shortcut(direction),
-            Some(RuntimeAction::OpenPalette) => self.open_palette(),
+            Some(RuntimeAction::OpenPalette) => Ok(consumed_if(self.open_palette())),
             Some(RuntimeAction::InteractFocused) => self.handle_interact_focused(),
             Some(RuntimeAction::EnterPluginInput) => {
                 self.set_mode(InputMode::PluginInput);
@@ -397,7 +403,7 @@ impl HypertileRuntime {
             }
             SplitBehavior::PromptPalette => {
                 let pane_id = self.split_focused(direction, DEFAULT_PLUGIN_TYPE)?;
-                self.open_palette_for_target(Some(pane_id))?;
+                self.open_palette_for_target(Some(pane_id));
             }
         }
         Ok(EventOutcome::Consumed)
@@ -409,7 +415,9 @@ impl HypertileRuntime {
         };
 
         match self.registry.plugin_type_for(pane_id) {
-            None | Some(DEFAULT_PLUGIN_TYPE) => self.open_palette_for_target(Some(pane_id)),
+            None | Some(DEFAULT_PLUGIN_TYPE) => {
+                Ok(consumed_if(self.open_palette_for_target(Some(pane_id))))
+            }
             Some(_) => {
                 self.set_mode(InputMode::PluginInput);
                 Ok(EventOutcome::Consumed)
@@ -514,6 +522,14 @@ impl HypertileRuntime {
                 let _ = self.registry.spawn_plugin(DEFAULT_PLUGIN_TYPE, pane_id);
             }
         }
+    }
+}
+
+fn consumed_if(handled: bool) -> EventOutcome {
+    if handled {
+        EventOutcome::Consumed
+    } else {
+        EventOutcome::Ignored
     }
 }
 
