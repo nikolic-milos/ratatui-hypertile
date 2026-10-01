@@ -235,6 +235,42 @@ mod tests {
     }
 
     #[test]
+    fn palette_state_stays_with_its_tab() {
+        use crate::{HypertilePlugin, PaletteBehavior, PaletteConfig};
+        use ratatui_hypertile::KeyChord;
+
+        struct Dummy;
+        impl HypertilePlugin for Dummy {
+            fn render(&mut self, _area: Rect, _buf: &mut Buffer, _is_focused: bool) {}
+        }
+
+        let mut workspace = WorkspaceRuntime::new(|| {
+            let mut runtime = HypertileRuntime::builder()
+                .with_palette_config(
+                    PaletteConfig::default().with_behavior(PaletteBehavior::EmitSelection),
+                )
+                .build();
+            runtime.register_plugin_type("cpu", || Dummy);
+            runtime
+        });
+        let enter = HypertileEvent::Key(KeyChord::new(KeyCode::Enter));
+
+        assert!(workspace.active_runtime_mut().open_palette());
+        workspace.handle_event(enter);
+        workspace.new_tab();
+        let runtime = workspace.active_runtime_mut();
+        assert_eq!(
+            runtime.palette_config().behavior(),
+            PaletteBehavior::EmitSelection
+        );
+        assert_eq!(runtime.take_palette_selection(), None);
+
+        workspace.prev_tab();
+        let selection = workspace.active_runtime_mut().take_palette_selection();
+        assert_eq!(selection.map(|s| s.plugin_type).as_deref(), Some("cpu"));
+    }
+
+    #[test]
     fn tab_lifecycle_keeps_active_index_valid() {
         let mut ws = test_workspace();
         ws.new_tab();

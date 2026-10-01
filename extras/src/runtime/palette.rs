@@ -6,7 +6,8 @@ use crate::runtime::{HypertileRuntime, RuntimeError};
 use ratatui::layout::Direction;
 use ratatui_hypertile::{EventOutcome, HypertileEvent, KeyChord, KeyCode, PaneId};
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum PaletteBehavior {
     #[default]
     Apply,
@@ -15,11 +16,42 @@ pub enum PaletteBehavior {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PaletteConfig {
-    pub allowed_plugins: Option<Vec<String>>,
-    pub behavior: PaletteBehavior,
+    allowed_plugin_types: Option<Vec<String>>,
+    behavior: PaletteBehavior,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+impl PaletteConfig {
+    pub fn with_allowed_plugin_types<I, S>(mut self, plugin_types: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.allowed_plugin_types = Some(plugin_types.into_iter().map(Into::into).collect());
+        self
+    }
+
+    pub fn with_behavior(mut self, behavior: PaletteBehavior) -> Self {
+        self.behavior = behavior;
+        self
+    }
+
+    pub fn allowed_plugin_types(&self) -> Option<&[String]> {
+        self.allowed_plugin_types.as_deref()
+    }
+
+    pub fn behavior(&self) -> PaletteBehavior {
+        self.behavior
+    }
+
+    fn allows(&self, plugin_type: &str) -> bool {
+        self.allowed_plugin_types
+            .as_ref()
+            .is_none_or(|allowed| allowed.iter().any(|name| name == plugin_type))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub struct PaletteSelection {
     pub plugin_type: String,
     pub target_pane: Option<PaneId>,
@@ -95,12 +127,11 @@ impl HypertileRuntime {
     }
 
     pub fn set_palette_config(&mut self, config: PaletteConfig) {
-        self.close_palette();
-        self.palette.selection = None;
+        self.discard_palette();
         self.palette.config = config;
     }
 
-    pub fn open_palette(&mut self) -> Result<EventOutcome, RuntimeError> {
+    pub fn open_palette(&mut self) -> bool {
         self.open_palette_for_target(None)
     }
 
@@ -121,35 +152,29 @@ impl HypertileRuntime {
         self.palette.selection.take()
     }
 
-    pub(super) fn open_palette_for_target(
-        &mut self,
-        target_pane: Option<PaneId>,
-    ) -> Result<EventOutcome, RuntimeError> {
+    /// Closes the palette and drops any unclaimed selection.
+    pub(super) fn discard_palette(&mut self) {
         self.close_palette();
         self.palette.selection = None;
-        self.clear_transient_state();
-        self.palette.items = self
+    }
+
+    pub(super) fn open_palette_for_target(&mut self, target_pane: Option<PaneId>) -> bool {
+        self.discard_palette();
+        let mut items = self
             .registry
             .registered_types()
-            .filter(|t| *t != DEFAULT_PLUGIN_TYPE)
-            .filter(|t| {
-                self.palette
-                    .config
-                    .allowed_plugins
-                    .as_ref()
-                    .is_none_or(|allowed| allowed.iter().any(|name| name == *t))
-            })
+            .filter(|t| *t != DEFAULT_PLUGIN_TYPE && self.palette.config.allows(t))
             .map(str::to_string)
             .collect::<Vec<_>>();
-        self.palette.items.sort();
-        self.palette.target_pane = target_pane;
-        self.palette.show = !self.palette.items.is_empty();
-        if self.palette.show {
-            Ok(EventOutcome::Consumed)
-        } else {
-            self.palette.target_pane = None;
-            Ok(EventOutcome::Ignored)
+        if items.is_empty() {
+            return false;
         }
+        items.sort();
+        self.clear_transient_state();
+        self.palette.items = items;
+        self.palette.target_pane = target_pane;
+        self.palette.show = true;
+        true
     }
 
     fn refresh_filtered_palette_cache(&mut self) {
@@ -248,11 +273,11 @@ impl HypertileRuntime {
                 };
                 let target_pane = self.palette.target_pane;
                 if self.palette.config.behavior == PaletteBehavior::EmitSelection {
+                    self.close_palette();
                     self.palette.selection = Some(PaletteSelection {
                         plugin_type,
                         target_pane,
                     });
-                    self.close_palette();
                     return Some(Ok(EventOutcome::Consumed));
                 }
                 let result = if let Some(pane_id) = target_pane {
@@ -261,10 +286,10 @@ impl HypertileRuntime {
                     let direction = self.auto_split_direction();
                     self.split_focused(direction, &plugin_type).map(|_| ())
                 };
-                Some(result.map(|()| {
-                    self.close_palette();
-                    EventOutcome::Consumed
-                }))
+                // Close on failure too. The target may be gone, and retrying
+                // the same choice would fail the same way.
+                self.close_palette();
+                Some(result.map(|()| EventOutcome::Consumed))
             }
             HypertileEvent::Key(KeyChord {
                 code: KeyCode::Backspace,
@@ -343,7 +368,7 @@ mod tests {
     use super::*;
     use crate::{
         HypertilePlugin,
-        runtime::{HypertileRuntime, InputMode, SplitBehavior},
+        runtime::{HypertileRuntime, InputMode, SplitBehavior, mouse::MouseResizeHover},
     };
     use ratatui::{buffer::Buffer, layout::Rect};
 
@@ -352,65 +377,58 @@ mod tests {
         fn render(&mut self, _area: Rect, _buf: &mut Buffer, _is_focused: bool) {}
     }
 
+    fn key(code: KeyCode) -> HypertileEvent {
+        HypertileEvent::Key(KeyChord::new(code))
+    }
+
+    fn emit_selection() -> PaletteConfig {
+        PaletteConfig::default().with_behavior(PaletteBehavior::EmitSelection)
+    }
+
+    fn runtime_with(config: PaletteConfig) -> HypertileRuntime {
+        let mut runtime = HypertileRuntime::builder()
+            .with_split_behavior(SplitBehavior::PromptPalette)
+            .with_palette_config(config)
+            .build();
+        runtime.register_plugin_type("cpu", || Dummy);
+        runtime.register_plugin_type("logs", || Dummy);
+        runtime
+    }
+
+    fn rendered_text(runtime: &HypertileRuntime) -> String {
+        let area = Rect::new(0, 0, 80, 24);
+        let mut buf = Buffer::empty(area);
+        runtime.render_palette(area, &mut buf);
+        buf.content.iter().map(|cell| cell.symbol()).collect()
+    }
+
     #[test]
     fn split_shortcut_can_open_palette_for_new_pane() {
-        let key = |code| HypertileEvent::Key(KeyChord::new(code));
-        for behavior in [PaletteBehavior::Apply, PaletteBehavior::EmitSelection] {
-            let mut runtime = HypertileRuntime::builder()
-                .with_split_behavior(SplitBehavior::PromptPalette)
-                .with_palette_config(PaletteConfig {
-                    allowed_plugins: Some(
-                        ["cpu", "cpu", "block", "unknown"]
-                            .map(str::to_string)
-                            .to_vec(),
-                    ),
-                    behavior,
-                })
-                .build();
-            runtime.register_plugin_type("cpu", || Dummy);
-            runtime.register_plugin_type("internal", || Dummy);
+        let mut runtime = HypertileRuntime::builder()
+            .with_split_behavior(SplitBehavior::PromptPalette)
+            .build();
+        runtime.register_plugin_type("cpu", || Dummy);
 
-            let before = runtime.registry.instance_count();
-            assert!(runtime.handle_event(key(KeyCode::Char('s'))).is_consumed());
-            assert_eq!(runtime.registry.instance_count(), before + 1);
-            assert!(runtime.is_palette_open());
-            assert_eq!(runtime.palette.items, ["cpu"]);
-            let target = runtime.palette.target_pane.expect("new placeholder target");
+        let before = runtime.registry.instance_count();
+        let outcome = runtime.handle_event(HypertileEvent::Key(KeyChord::new(KeyCode::Char('s'))));
+        assert!(outcome.is_consumed());
+        assert_eq!(runtime.registry.instance_count(), before + 1);
+        assert!(runtime.palette.show);
 
-            assert!(runtime.handle_event(key(KeyCode::Char('c'))).is_consumed());
-            assert!(
-                runtime
-                    .try_handle_event(key(KeyCode::Enter))
-                    .unwrap()
-                    .is_consumed()
-            );
-            assert!(!runtime.is_palette_open());
-            assert_eq!(runtime.registry.instance_count(), before + 1);
-            match behavior {
-                PaletteBehavior::Apply => {
-                    assert_eq!(runtime.registry.plugin_type_for(target), Some("cpu"));
-                    assert_eq!(runtime.take_palette_selection(), None);
-                    runtime.open_palette_for_target(Some(target)).unwrap();
-                    runtime.close_focused().unwrap();
-                    for _ in 0..2 {
-                        assert!(runtime.try_handle_event(key(KeyCode::Enter)).is_err());
-                        assert!(runtime.is_palette_open());
-                        assert_eq!(runtime.registry.instance_count(), before);
-                    }
-                }
-                PaletteBehavior::EmitSelection => {
-                    assert_eq!(runtime.registry.plugin_type_for(target), Some("block"));
-                    assert_eq!(
-                        runtime.take_palette_selection(),
-                        Some(PaletteSelection {
-                            plugin_type: "cpu".into(),
-                            target_pane: Some(target),
-                        })
-                    );
-                    assert_eq!(runtime.take_palette_selection(), None);
-                }
-            }
-        }
+        let target = runtime
+            .palette
+            .target_pane
+            .expect("split behavior should target new pane");
+
+        runtime.palette.query = "cpu".to_string();
+        runtime.clamp_palette_selection();
+        let apply = runtime
+            .handle_palette_event(&HypertileEvent::Key(KeyChord::new(KeyCode::Enter)))
+            .expect("palette should handle enter")
+            .expect("palette apply should succeed");
+        assert!(apply.is_consumed());
+        assert_eq!(runtime.registry.plugin_type_for(target), Some("cpu"));
+        assert_eq!(runtime.registry.instance_count(), before + 1);
     }
 
     #[test]
@@ -441,59 +459,159 @@ mod tests {
         let outcome = runtime.handle_event(HypertileEvent::Key(KeyChord::new(KeyCode::Enter)));
         assert!(outcome.is_consumed());
         assert_eq!(runtime.mode(), InputMode::PluginInput);
+    }
 
-        let key = |code| HypertileEvent::Key(KeyChord::new(code));
-        runtime.set_palette_config(PaletteConfig {
-            allowed_plugins: Some(vec!["cpu".into()]),
-            behavior: PaletteBehavior::EmitSelection,
-        });
-        for finish in [KeyCode::Enter, KeyCode::Escape] {
-            assert!(runtime.open_palette().unwrap().is_consumed());
-            assert!(runtime.handle_event(key(finish)).is_consumed());
-            assert!(!runtime.is_palette_open());
-            assert_eq!(runtime.mode(), InputMode::PluginInput);
-            assert_eq!(runtime.registry.instance_count(), 1);
-            assert_eq!(runtime.registry.plugin_type_for(PaneId::ROOT), Some("cpu"));
-            let expected = (finish == KeyCode::Enter).then(|| PaletteSelection {
-                plugin_type: "cpu".into(),
-                target_pane: None,
-            });
-            assert_eq!(runtime.take_palette_selection(), expected);
-        }
-
-        runtime.open_palette().unwrap();
-        runtime.handle_event(key(KeyCode::Char('z')));
-        let area = Rect::new(2, 3, 80, 24);
-        let mut buf = Buffer::empty(area);
-        runtime.render_palette(area, &mut buf);
-        let text: String = buf.content.iter().map(|cell| cell.symbol()).collect();
-        assert!(text.contains("No matching plugins"));
-        assert!(runtime.handle_event(key(KeyCode::Enter)).is_consumed());
-        assert_eq!(runtime.take_palette_selection(), None);
-        let unchanged = buf.clone();
-        runtime.render_palette(area, &mut buf);
-        assert_eq!(
-            buf, unchanged,
-            "a closed palette must not paint over app content"
+    #[test]
+    fn allowlist_filters_and_sorts_palette_items() {
+        let mut runtime = runtime_with(
+            PaletteConfig::default()
+                .with_allowed_plugin_types(["logs", "cpu", "cpu", "block", "unknown"]),
         );
+        runtime.register_plugin_type("internal", || Dummy);
 
-        runtime.open_palette().unwrap();
-        runtime.handle_event(key(KeyCode::Enter));
-        runtime.open_palette().unwrap();
+        assert!(runtime.open_palette());
+        assert_eq!(runtime.palette.items, ["cpu", "logs"]);
+    }
+
+    #[test]
+    fn empty_allowlist_disables_palette() {
+        let mut runtime =
+            runtime_with(PaletteConfig::default().with_allowed_plugin_types(Vec::<String>::new()));
+
+        assert!(!runtime.open_palette());
+        assert_eq!(
+            runtime.handle_event(key(KeyCode::Char('p'))),
+            EventOutcome::Ignored
+        );
+        assert!(!runtime.is_palette_open());
+    }
+
+    #[test]
+    fn opening_without_choices_keeps_transient_state() {
+        let mut runtime = HypertileRuntime::new();
+        runtime.mouse_resize_hover = Some(MouseResizeHover {
+            direction: Direction::Horizontal,
+            rect: Rect::new(0, 0, 10, 10),
+            ratio: 0.5,
+        });
+
+        assert!(!runtime.open_palette());
+        assert!(runtime.mouse_resize_hover.is_some());
+    }
+
+    #[test]
+    fn emit_selection_reports_choice_once_without_mounting() {
+        let mut runtime = runtime_with(emit_selection());
+        let before = runtime.registry.instance_count();
+
+        assert!(runtime.handle_event(key(KeyCode::Char('s'))).is_consumed());
+        let target = runtime
+            .palette
+            .target_pane
+            .expect("split should target new pane");
+        assert!(runtime.handle_event(key(KeyCode::Enter)).is_consumed());
+
+        assert!(!runtime.is_palette_open());
+        assert_eq!(runtime.registry.instance_count(), before + 1);
+        assert_eq!(
+            runtime.registry.plugin_type_for(target),
+            Some(DEFAULT_PLUGIN_TYPE)
+        );
         assert_eq!(
             runtime.take_palette_selection(),
-            None,
-            "reopen discards stale choices"
+            Some(PaletteSelection {
+                plugin_type: "cpu".into(),
+                target_pane: Some(target),
+            })
         );
-        runtime.close_palette();
+        assert_eq!(runtime.take_palette_selection(), None);
+    }
+
+    #[test]
+    fn emit_selection_from_open_palette_has_no_target() {
+        let mut runtime = runtime_with(emit_selection());
+
+        assert!(runtime.open_palette());
+        runtime.handle_event(key(KeyCode::Down));
+        runtime.handle_event(key(KeyCode::Enter));
+
+        assert_eq!(
+            runtime.take_palette_selection(),
+            Some(PaletteSelection {
+                plugin_type: "logs".into(),
+                target_pane: None,
+            })
+        );
+        assert_eq!(runtime.registry.instance_count(), 1);
+    }
+
+    #[test]
+    fn escape_closes_palette_without_selection() {
+        let mut runtime = runtime_with(emit_selection());
+
+        assert!(runtime.open_palette());
+        assert!(runtime.handle_event(key(KeyCode::Escape)).is_consumed());
+
         assert!(!runtime.is_palette_open());
-        runtime.set_palette_config(PaletteConfig {
-            allowed_plugins: Some(Vec::new()),
-            ..PaletteConfig::default()
-        });
-        assert_eq!(runtime.palette_config().behavior, PaletteBehavior::Apply);
-        assert_eq!(runtime.open_palette().unwrap(), EventOutcome::Ignored);
+        assert_eq!(runtime.take_palette_selection(), None);
+    }
+
+    #[test]
+    fn failed_apply_closes_palette() {
+        let mut runtime = runtime_with(PaletteConfig::default());
+        runtime.handle_event(key(KeyCode::Char('s')));
+        runtime.close_focused().unwrap();
+        assert!(runtime.is_palette_open());
+
+        assert!(runtime.try_handle_event(key(KeyCode::Enter)).is_err());
         assert!(!runtime.is_palette_open());
         assert_eq!(runtime.registry.instance_count(), 1);
+    }
+
+    #[test]
+    fn reopening_or_reconfiguring_discards_unclaimed_selection() {
+        let mut runtime = runtime_with(emit_selection());
+
+        runtime.open_palette();
+        runtime.handle_event(key(KeyCode::Enter));
+        runtime.open_palette();
+        assert_eq!(runtime.take_palette_selection(), None);
+
+        runtime.handle_event(key(KeyCode::Enter));
+        runtime.set_palette_config(emit_selection());
+        assert_eq!(runtime.take_palette_selection(), None);
+    }
+
+    #[test]
+    fn reset_discards_palette_state() {
+        let mut runtime = runtime_with(emit_selection());
+
+        runtime.handle_event(key(KeyCode::Char('s')));
+        runtime.handle_event(key(KeyCode::Enter));
+        runtime.reset();
+        assert_eq!(runtime.take_palette_selection(), None);
+
+        runtime.open_palette();
+        runtime.reset();
+        assert!(!runtime.is_palette_open());
+    }
+
+    #[test]
+    fn palette_without_matches_shows_hint_and_enter_closes_it() {
+        let mut runtime = runtime_with(emit_selection());
+        runtime.open_palette();
+        runtime.handle_event(key(KeyCode::Char('z')));
+
+        assert!(rendered_text(&runtime).contains("No matching plugins"));
+        assert!(runtime.handle_event(key(KeyCode::Enter)).is_consumed());
+        assert!(!runtime.is_palette_open());
+        assert_eq!(runtime.take_palette_selection(), None);
+    }
+
+    #[test]
+    fn closed_palette_renders_nothing() {
+        let runtime = runtime_with(PaletteConfig::default());
+
+        assert_eq!(rendered_text(&runtime).trim(), "");
     }
 }
